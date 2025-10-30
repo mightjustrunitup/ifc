@@ -1,20 +1,18 @@
 # IFC Bonsai MCP
 
-An MCP server that connects AI language models with the [Bonsai](https://extensions.blender.org/add-ons/bonsai/) Blender add-on. This integration enables AI-driven BIM workflows with RAG-powered IFC knowledge, advanced mesh generation tools, and IFC/OpenBIM operations.
+IFC-Bonsai-MCP is an MCP server that connects AI language models with the [Bonsai](https://extensions.blender.org/add-ons/bonsai/) Blender add-on to read, create, and edit IFC models directly via high-level tool calls. 
 
-**Key Features:**
-- Create building elements (walls, doors, windows, roofs, stairs) using natural language
-- AI-assisted BIM modeling and editing
-- Complex 3D geometry generation with Python/Trimesh
-- IFC/OpenBIM workflows with IfcOpenShell
-- RAG-powered IFC documentation search
-
-**Architecture:**
-- **MCP Server** (System Python) - Manages RAG embeddings, communicates with Blender, provides MCP interface
-- **Blender Add-on** (Blender Python) - Handles IFC operations and 3D geometry (requires IfcOpenShell, Trimesh)
+<!-- > This repository is associated with the paper: **MCP4IFC: IFC-Based Building Design using Large Language Models** | [Project Page](https://show2instruct.github.io/mcp4ifc/) · [arXiv](link-when-available) · [Experiment Results](https://drive.google.com/drive/folders/1aeheOPQG9IUZf0TVAyczumG9J_ZUr5Ad?usp=sharing) -->
 
 
-## Installation
+
+**🚀 Highlights:**
+- **AI-Driven BIM**: Use natural language to create and edit IFC elements like walls, doors, roofs, and stairs directly within Blender.
+- **RAG-Powered Knowledge**: Leverage a Retrieval-Augmented Generation system with a local vector index for instant, semantic search across IFC and IfcOpenShell documentation.
+- **Advanced Geometry Generation**: Create complex 3D geometry using Python and [Trimesh](https://trimesh.org/), with tools to convert procedural meshes into native IFC elements.
+- **Extensible Toolset**: A comprehensive set of over 50 MCP tools for scene analysis, object manipulation, parametric creation, and knowledge retrieval.
+
+## Installation Guide
 
 ### Prerequisites
 
@@ -194,7 +192,10 @@ The MCP server includes a RAG-powered tool to query IFC documentation and best p
 ## List of Available Tools
 The MCP server has various tools that can be called by the AI assistant. All available tools and their parameters are documented in the [API Reference](./docs/api-reference.md).
 
-Here is the summary of the available tools:
+<details>
+<summary>Click to expand the summary of the available tools:</summary>
+
+
 
 | Tool Name | Description |
 |-----------|-------------|
@@ -254,9 +255,20 @@ Here is the summary of the available tools:
 | `clear_ifc_knowledge_cache` | Clear cached IFC knowledge data |
 | `get_cache_statistics` | Get detailed cache usage statistics |
 
+</details>
+
 
 ## Contributing
 Pull requests are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for any issues.
 
 ## Acknowledgements
 This is not an official Blender, Bonsai or IfcOpenShell project. Thanks to [BlenderMCP](https://github.com/ahujasid/blender-mcp) and [Bonsai_mcp](https://github.com/JotaDeRodriguez/Bonsai_mcp) for their open source work.
+
+<!-- ## Citation
+Please consider citing our work if you find it useful or used in your research.
+
+```bibtex
+``` -->
+
+<!-- ## Contact
+Please contact us if you have any questions related to the MCP server: bharathikannan.nithyanantham@uni-rostock.de -->
