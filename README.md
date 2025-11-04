@@ -39,6 +39,7 @@ python scripts/install_blender_packages.py
 # 4. Create the zip file of blender_addon folder manually or use the helper script:
 python scripts/install.py --create-addon-zip
 # Then: Blender → Edit → Preferences → Add-ons → Install → blender_addon.zip
+# After installing the add-on: Go to Blender UI → Sidebar Add-On Panel → BlenderMCP → Click "Connect to MCP server"
 
 # 5. Configure Claude Desktop (Edit Config in Settings → Developer)
 # Add: 
@@ -55,6 +56,9 @@ python scripts/install.py --create-addon-zip
 uv run python scripts/init_knowledge_base.py
 uv run python scripts/embedding_server.py --model sentence-transformers/all-MiniLM-L6-v2 --host 127.0.0.1 --port 8080 --normalize
 ```
+
+Here is the workflow diagram in Claude Desktop for reference:
+[![Workflow Diagram](./figs/workflow.png)](./figs/workflow.png)
 
 If there are any issues, please refer to the detailed installation steps below.
 
@@ -124,13 +128,10 @@ If there are any issues, please refer to the detailed installation steps below.
 ### Blender Add-on Packaging
 The Blender add-on enables communication between Blender and the MCP server. To install it:
 1. Create a zip file of the `blender_addon` folder
+   - Either manually or run `python scripts/install.py --create-addon-zip`
 2. In Blender, go to `Edit > Preferences > Add-ons > Install...`
 3. Select the `blender_addon.zip` file and activate the add-on
-
-You can create the zip file manually or use the helper script:
-```bash
-python scripts/install.py --create-addon-zip
-```
+4. In the main Blender UI, open `Sidebar Add-On Panel → BlenderMCP → Connect to MCP server`. Check `/figs/workflow.png` for reference.
 
 ## Configuring Claude Desktop
 
@@ -171,6 +172,8 @@ If you installed globally, use the system Python:
 ## Running the MCP Server
 
 > **Important**: Since the project tries to save to an IFC file and loads it, always create an empty file and save it before doing any operations. Because the MCP server directly loads the IFC file and does the edits. If a new project is created and no .ifc file is saved, then the MCP server will not update in the actual blender scene. Just do ctrl (cmd) + S and save an empty IFC file if a new project is created.
+
+> If there are connection issues please check if the "Connect to MCP server" button in the Blender add-on panel has been clicked. Check the `/figs/workflow.png` to see where it is located.
 
 > **Code Execution Limitations**: The general `execute_code` tool behaves unpredictably with IFC operations. The general execute code tool lacks proper context handling, cannot save changes back to the model consistently and may produce unsafe results for IFC operations. Consider disabling the general `execute_code` tool if there are issues.
 
