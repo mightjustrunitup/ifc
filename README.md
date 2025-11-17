@@ -2,9 +2,7 @@
 
 IFC-Bonsai-MCP is an MCP server that connects AI language models with the [Bonsai](https://extensions.blender.org/add-ons/bonsai/) Blender add-on to read, create, and edit IFC models directly via high-level tool calls. 
 
-<!-- > This repository is associated with the paper: **MCP4IFC: IFC-Based Building Design using Large Language Models** | [Project Page](https://show2instruct.github.io/mcp4ifc/) · [arXiv](link-when-available) · [Experiment Results](https://drive.google.com/drive/folders/1aeheOPQG9IUZf0TVAyczumG9J_ZUr5Ad?usp=sharing) -->
-
-
+> This repository is associated with the paper: **MCP4IFC: IFC-Based Building Design using Large Language Models** | [Project Page](https://show2instruct.github.io/mcp4ifc/) · [arXiv](https://arxiv.org/abs/2511.05533) · [Experiment Results](https://drive.google.com/drive/folders/1aeheOPQG9IUZf0TVAyczumG9J_ZUr5Ad?usp=sharing)
 
 **🚀 Highlights:**
 - **AI-Driven BIM**: Use natural language to create and edit IFC elements like walls, doors, roofs, and stairs directly within Blender.
@@ -267,11 +265,20 @@ Pull requests are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the develo
 ## Acknowledgements
 This is not an official Blender, Bonsai or IfcOpenShell project. Thanks to [BlenderMCP](https://github.com/ahujasid/blender-mcp) and [Bonsai_mcp](https://github.com/JotaDeRodriguez/Bonsai_mcp) for their open source work.
 
-<!-- ## Citation
+## Citation
 Please consider citing our work if you find it useful or used in your research.
 
 ```bibtex
-``` -->
+@misc{nithyanantham2025mcp4ifcifcbasedbuildingdesign,
+      title={MCP4IFC: IFC-Based Building Design Using Large Language Models}, 
+      author={Bharathi Kannan Nithyanantham and Tobias Sesterhenn and Ashwin Nedungadi and Sergio Peral Garijo and Janis Zenkner and Christian Bartelt and Stefan Lüdtke},
+      year={2025},
+      eprint={2511.05533},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2511.05533}, 
+}
+``` 
 
 <!-- ## Contact
 Please contact us if you have any questions related to the MCP server: bharathikannan.nithyanantham@uni-rostock.de -->
