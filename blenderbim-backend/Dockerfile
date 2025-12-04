@@ -62,8 +62,9 @@ RUN apt-get update && apt-get install -y \
 # Copy built Blender + MCP + addons from builder
 COPY --from=builder /opt/app_runtime /opt/app_runtime
 
-# Add Blender to PATH (or call via full path /opt/app_runtime/blender/blender)
-ENV PATH="/opt/app_runtime/blender/blender:${PATH}"
+# Add Blender to PATH
+ENV PATH="/opt/app_runtime/blender:${PATH}"
+RUN ln -s /opt/app_runtime/blender/blender /usr/local/bin/blender
 
 # Copy and install your application
 COPY requirements.txt ./
