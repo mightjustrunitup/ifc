@@ -20,7 +20,7 @@ bpy.ops.wm.save_userpref()
 
 # Start MCP server in background
 echo "Starting MCP server on port $MCP_PORT..."
-export PYTHONPATH="/opt/app_runtime/ifc-bonsai-mcp:${PYTHONPATH}"
+export PYTHONPATH="/opt/app_runtime/ifc-bonsai-mcp/src:/opt/app_runtime/ifc-bonsai-mcp:${PYTHONPATH}"
 echo "PYTHONPATH=$PYTHONPATH" > /tmp/mcp_server.log
 echo "--- sys.path ---" >> /tmp/mcp_server.log
 python3.11 -c "import sys; print('\n'.join(sys.path))" >> /tmp/mcp_server.log 2>&1
@@ -31,7 +31,7 @@ print(importlib.util.find_spec('ifc_bonsai_mcp'))
 PY
 
 echo "Attempting to start MCP server (module)..." >> /tmp/mcp_server.log
-python3.11 -m ifc_bonsai_mcp.server --port $MCP_PORT >> /tmp/mcp_server.log 2>&1 &
+python3.11 -m blender_mcp.server --port $MCP_PORT >> /tmp/mcp_server.log 2>&1 &
 MCP_PID=$!
 sleep 3
 
@@ -40,9 +40,9 @@ if ! ps -p $MCP_PID > /dev/null; then
     echo "MCP server failed to start. Check logs:"
     cat /tmp/mcp_server.log
     # Try running server directly from source as a fallback
-    if [ -f "/opt/app_runtime/ifc-bonsai-mcp/server.py" ]; then
-        echo "Attempting fallback: running /opt/app_runtime/ifc-bonsai-mcp/server.py" >> /tmp/mcp_server.log
-        python3.11 /opt/app_runtime/ifc-bonsai-mcp/server.py --port $MCP_PORT >> /tmp/mcp_server.log 2>&1 &
+    if [ -f "/opt/app_runtime/ifc-bonsai-mcp/src/blender_mcp/server.py" ]; then
+        echo "Attempting fallback: running /opt/app_runtime/ifc-bonsai-mcp/src/blender_mcp/server.py" >> /tmp/mcp_server.log
+        python3.11 /opt/app_runtime/ifc-bonsai-mcp/src/blender_mcp/server.py --port $MCP_PORT >> /tmp/mcp_server.log 2>&1 &
         MCP_PID=$!
         sleep 2
         if ! ps -p $MCP_PID > /dev/null; then
