@@ -1,0 +1,4 @@
+[build]
+dockerfilePath = "blenderbim-backend/Dockerfile.txt"
+
+
