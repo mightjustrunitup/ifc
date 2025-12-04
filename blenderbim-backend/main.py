@@ -3,18 +3,20 @@ import tempfile
 import subprocess
 import logging
 from pathlib import Path
-from typing import Optional
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from typing import Optional, List
+from fastapi import FastAPI, BackgroundTasks
+from fastapi.responses import FileResponse, Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
+
+from mcp_client import call_mcp_tool, get_mcp_tools, execute_tool_calls, export_ifc
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="BlenderBIM Worker", version="3.0.0")
+app = FastAPI(title="BlenderBIM Worker", version="4.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -24,25 +26,176 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Legacy request model (for backward compatibility)
 class GenerateRequest(BaseModel):
     python_code: str
     project_name: str = "Generated Model"
+
+# New MCP-based request model
+class ToolCall(BaseModel):
+    tool: str
+    params: dict = {}
+
+class MCPGenerateRequest(BaseModel):
+    tool_calls: List[ToolCall]
+    project_name: str = "Generated Model"
+
+@app.get("/")
+async def root():
+    """Root endpoint for health check"""
+    return {"service": "BlenderBIM MCP Worker", "version": "4.0.0", "status": "running"}
+
+@app.get("/tools")
+async def get_tools_simple():
+    """Simple /tools endpoint to view all available MCP4IFC tools"""
+    try:
+        tools = get_mcp_tools()
+        # Format for easy reading
+        tool_list = []
+        for tool in tools.get("tools", tools if isinstance(tools, list) else []):
+            tool_list.append({
+                "name": tool.get("name"),
+                "description": tool.get("description"),
+                "parameters": tool.get("inputSchema", tool.get("input_schema", {}))
+            })
+        return {"tools": tool_list, "count": len(tool_list)}
+    except Exception as e:
+        return {"error": str(e), "message": "MCP server may not be running"}
 
 @app.get("/health")
 async def health():
     """Health check endpoint"""
     try:
         result = subprocess.run(["blender", "--version"], capture_output=True, text=True, timeout=5)
+        
+        # Also check MCP server
+        mcp_status = "unknown"
+        try:
+            tools = get_mcp_tools()
+            mcp_status = "healthy"
+        except:
+            mcp_status = "unavailable"
+        
         return {
             "status": "healthy" if result.returncode == 0 else "degraded",
-            "blender": result.stdout.split('\n')[0] if result.returncode == 0 else "N/A"
+            "blender": result.stdout.split('\n')[0] if result.returncode == 0 else "N/A",
+            "mcp_server": mcp_status
         }
     except:
         return {"status": "unhealthy"}
 
-def wrap_code_with_safety(user_code: str, output_path: str) -> str:
-    """Wrap user code with proper error handling and export logic"""
+@app.get("/mcp/tools")
+async def get_tools():
+    """Get available MCP4IFC tools manifest - complete schema for LLM"""
+    try:
+        tools = get_mcp_tools()
+        return tools
+    except Exception as e:
+        logger.error(f"Failed to get MCP tools: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={"error": "MCP server unavailable", "details": str(e)}
+        )
+
+@app.get("/mcp/tools-for-llm")
+async def get_tools_for_llm():
+    """Get tools formatted for LLM function calling - ready to paste into prompt"""
+    try:
+        tools = get_mcp_tools()
+        # Format for OpenAI/Lovable AI function calling format
+        llm_tools = []
+        for tool in tools.get("tools", tools if isinstance(tools, list) else []):
+            llm_tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool.get("name"),
+                    "description": tool.get("description"),
+                    "parameters": tool.get("inputSchema", tool.get("input_schema", {}))
+                }
+            })
+        return {"tools": llm_tools, "count": len(llm_tools)}
+    except Exception as e:
+        logger.error(f"Failed to format MCP tools for LLM: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={"error": "MCP server unavailable", "details": str(e)}
+        )
+
+@app.post("/mcp/execute")
+async def execute_mcp_tools(request: MCPGenerateRequest, background_tasks: BackgroundTasks):
+    """Execute MCP tool calls and generate IFC file"""
     
+    temp_dir = Path(tempfile.mkdtemp())
+    ifc_path = temp_dir / f"{request.project_name.replace(' ', '_')}.ifc"
+    
+    try:
+        logger.info(f"[MCP Worker] Starting IFC generation via MCP: {request.project_name}")
+        logger.info(f"[MCP Worker] Tool calls: {len(request.tool_calls)}")
+        
+        # Execute all tool calls
+        for i, tool_call in enumerate(request.tool_calls):
+            logger.info(f"[MCP Worker] Executing tool {i+1}/{len(request.tool_calls)}: {tool_call.tool}")
+            
+            try:
+                result = call_mcp_tool(tool_call.tool, tool_call.params)
+                logger.info(f"[MCP Worker] Tool result: {result}")
+            except Exception as e:
+                logger.error(f"[MCP Worker] Tool {tool_call.tool} failed: {e}")
+                return Response(
+                    content=f"MCP tool execution failed: {tool_call.tool}\nError: {str(e)}",
+                    status_code=500,
+                    media_type="text/plain"
+                )
+        
+        # Export the IFC file
+        logger.info(f"[MCP Worker] Exporting IFC to: {ifc_path}")
+        try:
+            export_result = export_ifc(str(ifc_path))
+            logger.info(f"[MCP Worker] Export result: {export_result}")
+        except Exception as e:
+            logger.error(f"[MCP Worker] Export failed: {e}")
+            return Response(
+                content=f"IFC export failed: {str(e)}",
+                status_code=500,
+                media_type="text/plain"
+            )
+        
+        if not ifc_path.exists():
+            return Response(
+                content="IFC file not created after MCP execution",
+                status_code=500,
+                media_type="text/plain"
+            )
+        
+        file_size = ifc_path.stat().st_size
+        
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+        
+        return FileResponse(
+            path=str(ifc_path),
+            media_type="application/x-step",
+            filename=f"{request.project_name}.ifc",
+            headers={"X-File-Size": str(file_size)}
+        )
+        
+    except Exception as e:
+        logger.exception(f"[MCP Worker] Unexpected error: {str(e)}")
+        cleanup_temp_dir(temp_dir)
+        import traceback
+        error_msg = f"{type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}"
+        return Response(
+            content=error_msg,
+            status_code=500,
+            media_type="text/plain"
+        )
+
+@app.get("/dump-signatures")
+def get_signatures():
+    with open("/app/api_signatures.json") as f:
+        return json.load(f)
+
+
+def wrap_code_with_safety(user_code: str, output_path: str) -> str:
     wrapper = f'''
 import sys
 import traceback
@@ -53,30 +206,24 @@ import ifcopenshell.geom
 from blenderbim.bim.ifc import IfcStore
 
 try:
-    # === BEGIN USER CODE ===
 {chr(10).join("    " + line if line.strip() else "" for line in user_code.split(chr(10)))}
-    # === END USER CODE ===
-    
-    # Verify IFC file was created
+
     if 'ifc' not in locals():
-        raise RuntimeError("Error: Variable 'ifc' not found. Code must create IFC file with: ifc = ifcopenshell.api.run('project.create_file', version='IFC4')")
-    
-    # Store for IfcStore access
+        raise RuntimeError("Error: Variable 'ifc' not found.")
+
     IfcStore.file = ifc
-    
-    # Count created products
+
     products = ifc.by_type("IfcProduct")
     if len(products) == 0:
-        raise RuntimeError("Error: No IFC products created. Ensure code creates elements (walls, columns, etc.)")
-    
+        raise RuntimeError("No IFC products created.")
+
     print(f"✓ Success: Created {{len(products)}} IFC products")
-    
+
 except Exception as e:
     print(f"ERROR: {{type(e).__name__}}: {{str(e)}}", file=sys.stderr)
     traceback.print_exc(file=sys.stderr)
     sys.exit(1)
 
-# Export IFC file
 try:
     if IfcStore.file:
         IfcStore.file.write("{output_path}")
@@ -91,29 +238,35 @@ except Exception as export_error:
 '''
     return wrapper
 
+
+def cleanup_temp_dir(temp_dir: Path):
+    try:
+        import shutil
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+            logger.debug(f"[Worker] Cleaned temp: {temp_dir}")
+    except Exception as e:
+        logger.error(f"[Worker] Cleanup failed: {e}")
+
+
 @app.post("/generate-ifc")
-async def generate_ifc(request: GenerateRequest):
-    """
-    Generate IFC file from validated Python code
-    Returns the IFC file directly
-    """
-    
+async def generate_ifc(request: GenerateRequest, background_tasks: BackgroundTasks):
+    """Legacy endpoint - generates IFC from Python code"""
+
     temp_dir = Path(tempfile.mkdtemp())
     script_path = temp_dir / "generate.py"
     ifc_path = temp_dir / f"{request.project_name.replace(' ', '_')}.ifc"
-    
+
     try:
         logger.info(f"[Worker] Starting IFC generation: {request.project_name}")
-        
-        # Wrap code with safety
+
         wrapped = wrap_code_with_safety(request.python_code, str(ifc_path))
-        
+
         with open(script_path, 'w', encoding='utf-8') as f:
             f.write(wrapped)
-        
+
         logger.info(f"[Worker] Executing Blender script: {script_path}")
-        
-        # Execute in headless Blender
+
         result = subprocess.run(
             [
                 "blender",
@@ -126,89 +279,86 @@ async def generate_ifc(request: GenerateRequest):
             timeout=120,
             cwd=str(temp_dir)
         )
-        
-        # Log output
+
         if result.stdout:
             logger.info(f"[Blender] stdout:\n{result.stdout}")
         if result.stderr:
             logger.warning(f"[Blender] stderr:\n{result.stderr}")
+
+        # Check for Python errors in stderr even if Blender exits with code 0
+        python_error_indicators = [
+            "ERROR:", "TypeError", "NameError", "AttributeError", 
+            "ValueError", "KeyError", "IndexError", "RuntimeError",
+            "SyntaxError", "ImportError", "ModuleNotFoundError"
+        ]
         
-        # Check execution
-        if result.returncode != 0:
-            logger.error(f"[Worker] Blender execution failed (return code {result.returncode})")
-            error_detail = {
-                "error": "Blender execution failed",
-                "return_code": result.returncode,
-                "stdout": result.stdout[-1000:] if result.stdout else "",
-                "stderr": result.stderr[-1000:] if result.stderr else ""
-            }
-            
-            # Try to parse specific errors
-            if "NameError" in result.stderr:
-                error_detail["hint"] = "Check variable names (e.g., 'ifc', 'wall', 'storey')"
-            elif "AttributeError" in result.stderr:
-                error_detail["hint"] = "Check function/attribute names"
-            elif "TypeError" in result.stderr:
-                error_detail["hint"] = "Check function parameters"
-            
-            return {
-                "error": True,
-                "details": error_detail
-            }, 500
+        has_python_error = any(indicator in result.stderr for indicator in python_error_indicators)
         
-        # Verify file exists
+        if result.returncode != 0 or has_python_error:
+            # Return plain text error for AI retry loop
+            error_msg = f"Blender execution failed\n\nReturn code: {result.returncode}\n\n"
+            error_msg += f"STDERR:\n{result.stderr}\n\n"
+            error_msg += f"STDOUT:\n{result.stdout}"
+            
+            cleanup_temp_dir(temp_dir)
+            return Response(
+                content=error_msg,
+                status_code=500,
+                media_type="text/plain"
+            )
+
         if not ifc_path.exists():
-            logger.error("[Worker] IFC file not created")
-            return {
-                "error": True,
-                "details": {
-                    "error": "IFC file not created",
-                    "stdout": result.stdout[-500:] if result.stdout else "",
-                }
-            }, 500
-        
+            cleanup_temp_dir(temp_dir)
+            return Response(
+                content="IFC file not created after execution",
+                status_code=500,
+                media_type="text/plain"
+            )
+
         file_size = ifc_path.stat().st_size
-        logger.info(f"[Worker] ✓ IFC generated: {ifc_path} ({file_size} bytes)")
-        
-        # Return file
+
+        background_tasks.add_task(cleanup_temp_dir, temp_dir)
+
         return FileResponse(
             path=str(ifc_path),
             media_type="application/x-step",
             filename=f"{request.project_name}.ifc",
             headers={"X-File-Size": str(file_size)}
         )
-        
+
     except subprocess.TimeoutExpired:
         logger.error("[Worker] Blender execution timeout (120s)")
-        return {
-            "error": True,
-            "details": {
-                "error": "Blender execution timeout",
-                "hint": "Model is too complex. Simplify and retry."
-            }
-        }, 504
-    
+        cleanup_temp_dir(temp_dir)
+        return Response(
+            content="Blender execution timeout (120s). Model too complex.",
+            status_code=504,
+            media_type="text/plain"
+        )
+
     except Exception as e:
         logger.exception(f"[Worker] Unexpected error: {str(e)}")
-        return {
-            "error": True,
-            "details": {
-                "error": str(e),
-                "type": type(e).__name__
-            }
-        }, 500
+        cleanup_temp_dir(temp_dir)
+        import traceback
+        error_msg = f"{type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}"
+        return Response(
+            content=error_msg,
+            status_code=500,
+            media_type="text/plain"
+        )
+
+
+@app.get("/api-list")
+def get_api_list():
+    path = "/app/api_toolset.txt"
+    if not os.path.exists(path):
+        return {"error": "api_toolset.txt not found"}
     
-    finally:
-        # Cleanup
-        try:
-            import shutil
-            if temp_dir.exists():
-                shutil.rmtree(temp_dir)
-                logger.debug(f"[Worker] Cleaned temp: {temp_dir}")
-        except:
-            pass
+    with open(path, "r") as f:
+        return {"api": f.read().splitlines()}
+
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port, workers=1)
+
