@@ -1,0 +1,16 @@
+project_id = "gitfkenmwzrldzqunvww"
+
+[functions.ifc-chat]
+verify_jwt = false
+
+[functions.ifc-generator]
+verify_jwt = false
+
+[functions.ifc-pipeline-orchestrator]
+verify_jwt = false
+
+[functions.ifc-task-status]
+verify_jwt = false
+
+[functions.orchestrate]
+verify_jwt = false

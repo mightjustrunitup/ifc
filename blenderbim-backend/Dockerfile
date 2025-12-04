@@ -1,0 +1,60 @@
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+WORKDIR /app
+
+# System dependencies (added libxkbcommon0)
+RUN apt-get update && apt-get install -y \
+    wget \
+    unzip \
+    bzip2 \
+    libfreetype6 \
+    libgl1-mesa-glx \
+    libglu1-mesa \
+    libxi6 \
+    libxrender1 \
+    libgomp1 \
+    libgeos-dev \
+    python3.11 \
+    python3-pip \
+    xvfb \
+    libxkbcommon0 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Blender 4.2.0
+RUN wget -q https://download.blender.org/release/Blender4.2/blender-4.2.0-linux-x64.tar.xz && \
+    tar -xf blender-4.2.0-linux-x64.tar.xz && \
+    mv blender-4.2.0-linux-x64 /opt/blender && \
+    rm blender-4.2.0-linux-x64.tar.xz && \
+    ln -s /opt/blender/blender /usr/local/bin/blender
+
+# Install BlenderBIM (blenderbim-240602, Python 3.11)
+RUN wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/blenderbim-240602/blenderbim-240602-py311-linux.zip && \
+    mkdir -p /root/.config/blender/4.2/scripts/addons && \
+    unzip -q blenderbim-240602-py311-linux.zip -d /root/.config/blender/4.2/scripts/addons/ && \
+    rm blenderbim-240602-py311-linux.zip
+
+# Fix Shapely & LXML inside Blender's Python environment
+RUN /opt/blender/4.2/python/bin/python3.11 -m ensurepip && \
+    /opt/blender/4.2/python/bin/python3.11 -m pip install --upgrade pip && \
+    /opt/blender/4.2/python/bin/python3.11 -m pip install shapely==2.0.2 lxml==5.1.0
+
+# Enable BlenderBIM addon
+RUN blender --background --python-expr \
+    "import bpy; bpy.ops.preferences.addon_enable(module='blenderbim'); bpy.ops.wm.save_userpref()"
+
+# Install Python dependencies for your application
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Copy application files
+COPY main.py .
+COPY blender_generator.py .
+COPY start.sh .
+
+RUN chmod +x start.sh
+
+# Expose port and set entrypoint
+EXPOSE ${PORT}
+CMD ["./start.sh"]
