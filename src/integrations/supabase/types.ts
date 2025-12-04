@@ -154,85 +154,6 @@ export type Database = {
         }
         Relationships: []
       }
-      code_versions: {
-        Row: {
-          created_at: string | null
-          id: string
-          project_id: string
-          python_code: string
-          status: string
-          updated_at: string | null
-          validation_attempt: number | null
-          validator_notes: Json | null
-        }
-        Insert: {
-          created_at?: string | null
-          id?: string
-          project_id: string
-          python_code: string
-          status?: string
-          updated_at?: string | null
-          validation_attempt?: number | null
-          validator_notes?: Json | null
-        }
-        Update: {
-          created_at?: string | null
-          id?: string
-          project_id?: string
-          python_code?: string
-          status?: string
-          updated_at?: string | null
-          validation_attempt?: number | null
-          validator_notes?: Json | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "code_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      design_intents: {
-        Row: {
-          architect_enrichment: Json | null
-          created_at: string | null
-          id: string
-          intent_json: Json
-          project_id: string
-          updated_at: string | null
-          user_prompt: string
-        }
-        Insert: {
-          architect_enrichment?: Json | null
-          created_at?: string | null
-          id?: string
-          intent_json: Json
-          project_id: string
-          updated_at?: string | null
-          user_prompt: string
-        }
-        Update: {
-          architect_enrichment?: Json | null
-          created_at?: string | null
-          id?: string
-          intent_json?: Json
-          project_id?: string
-          updated_at?: string | null
-          user_prompt?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "design_intents_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       email_accounts: {
         Row: {
           access_token: string
@@ -497,81 +418,41 @@ export type Database = {
           },
         ]
       }
-      execution_logs: {
+      ifc_knowledge: {
         Row: {
+          category: string
+          content: string
           created_at: string | null
+          embedding: string | null
           id: string
-          level: string
-          message: string
           metadata: Json | null
-          project_id: string
-          stage: string
+          subcategory: string | null
+          title: string
+          updated_at: string | null
         }
         Insert: {
+          category: string
+          content: string
           created_at?: string | null
+          embedding?: string | null
           id?: string
-          level: string
-          message: string
           metadata?: Json | null
-          project_id: string
-          stage: string
+          subcategory?: string | null
+          title: string
+          updated_at?: string | null
         }
         Update: {
+          category?: string
+          content?: string
           created_at?: string | null
+          embedding?: string | null
           id?: string
-          level?: string
-          message?: string
           metadata?: Json | null
-          project_id?: string
-          stage?: string
+          subcategory?: string | null
+          title?: string
+          updated_at?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "execution_logs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      ifc_files: {
-        Row: {
-          created_at: string | null
-          glb_url: string | null
-          id: string
-          ifc_url: string
-          project_id: string
-          size_bytes: number | null
-          validation_passed: boolean | null
-        }
-        Insert: {
-          created_at?: string | null
-          glb_url?: string | null
-          id?: string
-          ifc_url: string
-          project_id: string
-          size_bytes?: number | null
-          validation_passed?: boolean | null
-        }
-        Update: {
-          created_at?: string | null
-          glb_url?: string | null
-          id?: string
-          ifc_url?: string
-          project_id?: string
-          size_bytes?: number | null
-          validation_passed?: boolean | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "ifc_files_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       leads: {
         Row: {
@@ -715,46 +596,52 @@ export type Database = {
       }
       projects: {
         Row: {
-          completed_at: string | null
-          created_at: string | null
+          architecture_result: Json | null
+          created_at: string
           current_stage: string | null
-          glb_url: string | null
+          generated_code: string | null
+          geometry_result: Json | null
           id: string
           ifc_url: string | null
           last_error: string | null
-          project_name: string
-          retry_count: number | null
+          project_name: string | null
+          spec_json: Json | null
           status: string
-          updated_at: string | null
-          user_id: string | null
+          updated_at: string
+          user_prompt: string
+          validation_result: Json | null
         }
         Insert: {
-          completed_at?: string | null
-          created_at?: string | null
+          architecture_result?: Json | null
+          created_at?: string
           current_stage?: string | null
-          glb_url?: string | null
+          generated_code?: string | null
+          geometry_result?: Json | null
           id?: string
           ifc_url?: string | null
           last_error?: string | null
-          project_name: string
-          retry_count?: number | null
+          project_name?: string | null
+          spec_json?: Json | null
           status?: string
-          updated_at?: string | null
-          user_id?: string | null
+          updated_at?: string
+          user_prompt: string
+          validation_result?: Json | null
         }
         Update: {
-          completed_at?: string | null
-          created_at?: string | null
+          architecture_result?: Json | null
+          created_at?: string
           current_stage?: string | null
-          glb_url?: string | null
+          generated_code?: string | null
+          geometry_result?: Json | null
           id?: string
           ifc_url?: string | null
           last_error?: string | null
-          project_name?: string
-          retry_count?: number | null
+          project_name?: string | null
+          spec_json?: Json | null
           status?: string
-          updated_at?: string | null
-          user_id?: string | null
+          updated_at?: string
+          user_prompt?: string
+          validation_result?: Json | null
         }
         Relationships: []
       }
@@ -807,7 +694,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      search_ifc_knowledge: {
+        Args: {
+          filter_category?: string
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          category: string
+          content: string
+          id: string
+          metadata: Json
+          similarity: number
+          subcategory: string
+          title: string
+        }[]
+      }
     }
     Enums: {
       code_status: "pending" | "validated" | "error" | "executing"
