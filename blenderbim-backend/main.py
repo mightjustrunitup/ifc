@@ -47,20 +47,16 @@ async def root():
 
 @app.get("/tools")
 async def get_tools_simple():
-    """Simple /tools endpoint to view all available MCP4IFC tools"""
-    try:
-        tools = get_mcp_tools()
-        # Format for easy reading
-        tool_list = []
-        for tool in tools.get("tools", tools if isinstance(tools, list) else []):
-            tool_list.append({
-                "name": tool.get("name"),
-                "description": tool.get("description"),
-                "parameters": tool.get("inputSchema", tool.get("input_schema", {}))
-            })
-        return {"tools": tool_list, "count": len(tool_list)}
-    except Exception as e:
-        return {"error": str(e), "message": "MCP server may not be running"}
+    """Simple /tools endpoint - MCP not available, use legacy /generate-ifc endpoint"""
+    return {
+        "message": "MCP server not enabled in this deployment",
+        "available_endpoints": {
+            "/generate-ifc": "POST - Generate IFC from Python code (legacy mode)",
+            "/health": "GET - Health check",
+            "/api-list": "GET - Available IfcOpenShell API functions"
+        },
+        "mode": "legacy"
+    }
 
 @app.get("/health")
 async def health():
