@@ -61,10 +61,14 @@ RUN apt-get update && apt-get install -y \
 
 # Copy built Blender + MCP + addons from builder
 COPY --from=builder /opt/app_runtime /opt/app_runtime
+COPY --from=builder /opt/ifc-bonsai-mcp /opt/ifc-bonsai-mcp
 
 # Add Blender to PATH
 ENV PATH="/opt/app_runtime/blender:${PATH}"
 RUN ln -s /opt/app_runtime/blender/blender /usr/local/bin/blender
+
+# Install MCP server in runtime
+RUN pip3 install /opt/ifc-bonsai-mcp
 
 # Copy and install your application
 COPY requirements.txt ./
