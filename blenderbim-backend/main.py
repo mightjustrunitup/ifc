@@ -10,13 +10,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 
-from mcp_client import call_mcp_tool, get_mcp_tools, execute_tool_calls, export_ifc
+# Use direct IFC tools (no MCP server dependency)
+from ifc_tools import (
+    TOOLS_MANIFEST, 
+    execute_tool, 
+    export_ifc as ifc_export,
+    reset_model,
+    get_model_info
+)
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="BlenderBIM Worker", version="4.0.0")
+app = FastAPI(title="BlenderBIM Worker", version="4.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,143 +38,119 @@ class GenerateRequest(BaseModel):
     python_code: str
     project_name: str = "Generated Model"
 
-# New MCP-based request model
+# Tool-based request model
 class ToolCall(BaseModel):
     tool: str
     params: dict = {}
 
-class MCPGenerateRequest(BaseModel):
+class ToolGenerateRequest(BaseModel):
     tool_calls: List[ToolCall]
     project_name: str = "Generated Model"
 
 @app.get("/")
 async def root():
     """Root endpoint for health check"""
-    return {"service": "BlenderBIM MCP Worker", "version": "4.0.0", "status": "running"}
+    return {"service": "BlenderBIM IFC Worker", "version": "4.1.0", "status": "running"}
 
 @app.get("/tools")
 async def get_tools_simple():
-    """Simple /tools endpoint to view all available MCP4IFC tools"""
-    try:
-        tools = get_mcp_tools()
-        # Format for easy reading
-        tool_list = []
-        for tool in tools.get("tools", tools if isinstance(tools, list) else []):
-            tool_list.append({
-                "name": tool.get("name"),
-                "description": tool.get("description"),
-                "parameters": tool.get("inputSchema", tool.get("input_schema", {}))
-            })
-        return {"tools": tool_list, "count": len(tool_list)}
-    except Exception as e:
-        return {"error": str(e), "message": "MCP server may not be running"}
+    """Get available IFC tools - no MCP server required"""
+    return {
+        "tools": TOOLS_MANIFEST["tools"],
+        "count": len(TOOLS_MANIFEST["tools"]),
+        "status": "ready"
+    }
 
 @app.get("/health")
 async def health():
     """Health check endpoint"""
+    blender_status = "unknown"
     try:
         result = subprocess.run(["blender", "--version"], capture_output=True, text=True, timeout=5)
-        
-        # Also check MCP server
-        mcp_status = "unknown"
-        try:
-            tools = get_mcp_tools()
-            mcp_status = "healthy"
-        except:
-            mcp_status = "unavailable"
-        
-        return {
-            "status": "healthy" if result.returncode == 0 else "degraded",
-            "blender": result.stdout.split('\n')[0] if result.returncode == 0 else "N/A",
-            "mcp_server": mcp_status
-        }
+        if result.returncode == 0:
+            blender_status = result.stdout.split('\n')[0]
     except:
-        return {"status": "unhealthy"}
+        blender_status = "unavailable"
+    
+    return {
+        "status": "healthy",
+        "blender": blender_status,
+        "ifc_tools": "ready",
+        "tool_count": len(TOOLS_MANIFEST["tools"])
+    }
 
 @app.get("/mcp/tools")
 async def get_tools():
-    """Get available MCP4IFC tools manifest - complete schema for LLM"""
-    try:
-        tools = get_mcp_tools()
-        return tools
-    except Exception as e:
-        logger.error(f"Failed to get MCP tools: {e}")
-        return JSONResponse(
-            status_code=503,
-            content={"error": "MCP server unavailable", "details": str(e)}
-        )
+    """Get available IFC tools manifest - complete schema for LLM"""
+    return TOOLS_MANIFEST
 
 @app.get("/mcp/tools-for-llm")
 async def get_tools_for_llm():
     """Get tools formatted for LLM function calling - ready to paste into prompt"""
-    try:
-        tools = get_mcp_tools()
-        # Format for OpenAI/Lovable AI function calling format
-        llm_tools = []
-        for tool in tools.get("tools", tools if isinstance(tools, list) else []):
-            llm_tools.append({
-                "type": "function",
-                "function": {
-                    "name": tool.get("name"),
-                    "description": tool.get("description"),
-                    "parameters": tool.get("inputSchema", tool.get("input_schema", {}))
-                }
-            })
-        return {"tools": llm_tools, "count": len(llm_tools)}
-    except Exception as e:
-        logger.error(f"Failed to format MCP tools for LLM: {e}")
-        return JSONResponse(
-            status_code=503,
-            content={"error": "MCP server unavailable", "details": str(e)}
-        )
+    llm_tools = []
+    for tool in TOOLS_MANIFEST["tools"]:
+        llm_tools.append({
+            "type": "function",
+            "function": {
+                "name": tool.get("name"),
+                "description": tool.get("description"),
+                "parameters": tool.get("parameters", {})
+            }
+        })
+    return {"tools": llm_tools, "count": len(llm_tools)}
 
 @app.post("/mcp/execute")
-async def execute_mcp_tools(request: MCPGenerateRequest, background_tasks: BackgroundTasks):
-    """Execute MCP tool calls and generate IFC file"""
+async def execute_tools(request: ToolGenerateRequest, background_tasks: BackgroundTasks):
+    """Execute tool calls and generate IFC file"""
     
     temp_dir = Path(tempfile.mkdtemp())
     ifc_path = temp_dir / f"{request.project_name.replace(' ', '_')}.ifc"
     
     try:
-        logger.info(f"[MCP Worker] Starting IFC generation via MCP: {request.project_name}")
-        logger.info(f"[MCP Worker] Tool calls: {len(request.tool_calls)}")
+        logger.info(f"[IFC Worker] Starting IFC generation: {request.project_name}")
+        logger.info(f"[IFC Worker] Tool calls: {len(request.tool_calls)}")
+        
+        # Reset model for fresh start
+        reset_model()
         
         # Execute all tool calls
+        results = []
         for i, tool_call in enumerate(request.tool_calls):
-            logger.info(f"[MCP Worker] Executing tool {i+1}/{len(request.tool_calls)}: {tool_call.tool}")
+            logger.info(f"[IFC Worker] Executing tool {i+1}/{len(request.tool_calls)}: {tool_call.tool}")
             
-            try:
-                result = call_mcp_tool(tool_call.tool, tool_call.params)
-                logger.info(f"[MCP Worker] Tool result: {result}")
-            except Exception as e:
-                logger.error(f"[MCP Worker] Tool {tool_call.tool} failed: {e}")
+            result = execute_tool(tool_call.tool, tool_call.params)
+            results.append({"tool": tool_call.tool, "result": result})
+            
+            if not result.get("success", False):
+                logger.error(f"[IFC Worker] Tool {tool_call.tool} failed: {result.get('error')}")
                 return Response(
-                    content=f"MCP tool execution failed: {tool_call.tool}\nError: {str(e)}",
+                    content=f"Tool execution failed: {tool_call.tool}\nError: {result.get('error', 'Unknown error')}",
                     status_code=500,
                     media_type="text/plain"
                 )
+            
+            logger.info(f"[IFC Worker] Tool result: {result}")
         
         # Export the IFC file
-        logger.info(f"[MCP Worker] Exporting IFC to: {ifc_path}")
-        try:
-            export_result = export_ifc(str(ifc_path))
-            logger.info(f"[MCP Worker] Export result: {export_result}")
-        except Exception as e:
-            logger.error(f"[MCP Worker] Export failed: {e}")
+        logger.info(f"[IFC Worker] Exporting IFC to: {ifc_path}")
+        export_result = ifc_export(str(ifc_path))
+        
+        if not export_result.get("success", False):
             return Response(
-                content=f"IFC export failed: {str(e)}",
+                content=f"IFC export failed: {export_result.get('error', 'Unknown error')}",
                 status_code=500,
                 media_type="text/plain"
             )
         
         if not ifc_path.exists():
             return Response(
-                content="IFC file not created after MCP execution",
+                content="IFC file not created after execution",
                 status_code=500,
                 media_type="text/plain"
             )
         
         file_size = ifc_path.stat().st_size
+        model_info = get_model_info()
         
         background_tasks.add_task(cleanup_temp_dir, temp_dir)
         
@@ -175,11 +158,14 @@ async def execute_mcp_tools(request: MCPGenerateRequest, background_tasks: Backg
             path=str(ifc_path),
             media_type="application/x-step",
             filename=f"{request.project_name}.ifc",
-            headers={"X-File-Size": str(file_size)}
+            headers={
+                "X-File-Size": str(file_size),
+                "X-Element-Count": str(model_info.get("element_count", 0))
+            }
         )
         
     except Exception as e:
-        logger.exception(f"[MCP Worker] Unexpected error: {str(e)}")
+        logger.exception(f"[IFC Worker] Unexpected error: {str(e)}")
         cleanup_temp_dir(temp_dir)
         import traceback
         error_msg = f"{type(e).__name__}: {str(e)}\n\n{traceback.format_exc()}"
@@ -188,11 +174,6 @@ async def execute_mcp_tools(request: MCPGenerateRequest, background_tasks: Backg
             status_code=500,
             media_type="text/plain"
         )
-
-@app.get("/dump-signatures")
-def get_signatures():
-    with open("/app/api_signatures.json") as f:
-        return json.load(f)
 
 
 def wrap_code_with_safety(user_code: str, output_path: str) -> str:
@@ -251,7 +232,7 @@ def cleanup_temp_dir(temp_dir: Path):
 
 @app.post("/generate-ifc")
 async def generate_ifc(request: GenerateRequest, background_tasks: BackgroundTasks):
-    """Legacy endpoint - generates IFC from Python code"""
+    """Legacy endpoint - generates IFC from Python code using Blender"""
 
     temp_dir = Path(tempfile.mkdtemp())
     script_path = temp_dir / "generate.py"
@@ -347,18 +328,7 @@ async def generate_ifc(request: GenerateRequest, background_tasks: BackgroundTas
         )
 
 
-@app.get("/api-list")
-def get_api_list():
-    path = "/app/api_toolset.txt"
-    if not os.path.exists(path):
-        return {"error": "api_toolset.txt not found"}
-    
-    with open(path, "r") as f:
-        return {"api": f.read().splitlines()}
-
-
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port, workers=1)
-

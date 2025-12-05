@@ -1,5 +1,5 @@
 # -----------------------------
-# Stage 1: Builder — build Blender, addons, MCP server
+# Stage 1: Builder — build Blender, addons
 # -----------------------------
 FROM ubuntu:22.04 AS builder
 
@@ -31,13 +31,7 @@ RUN /opt/blender/4.4/python/bin/python3.11 -m ensurepip \
     && /opt/blender/4.4/python/bin/python3.11 -m pip install --upgrade pip \
     && /opt/blender/4.4/python/bin/python3.11 -m pip install shapely==2.0.2 lxml==5.1.0
 
-# Clone and install MCP server (ifc-bonsai-mcp)
-RUN git clone https://github.com/Show2Instruct/ifc-bonsai-mcp.git /opt/ifc-bonsai-mcp
-WORKDIR /opt/ifc-bonsai-mcp
-# Normal install (not editable)
-RUN pip3 install .  
-
-# Install libraries needed by MCP + Blender scripts
+# Install libraries needed by Blender scripts
 RUN /opt/blender/4.4/python/bin/python3.11 -m pip install websockets trimesh numpy
 
 # Prepare runtime folder for final image
@@ -59,9 +53,8 @@ RUN apt-get update && apt-get install -y \
     libgomp1 libgeos-dev xvfb libxkbcommon0 python3.11 python3.11-venv python3.11-distutils \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy built Blender + MCP + addons from builder
+# Copy built Blender + addons from builder
 COPY --from=builder /opt/app_runtime /opt/app_runtime
-COPY --from=builder /opt/ifc-bonsai-mcp /opt/app_runtime/ifc-bonsai-mcp
 
 # Setup Blender config directory with addons
 RUN mkdir -p /root/.config/blender/4.4/scripts && \
@@ -81,14 +74,12 @@ RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
 # Make python3 point to python3.11 so scripts using `python3` use the same interpreter
 RUN if [ -x /usr/bin/python3.11 ]; then update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 || ln -sf /usr/bin/python3.11 /usr/bin/python3; fi
 
-# Install the MCP package copied from the builder stage using python3.11
-# This ensures the package is installed into the interpreter that will run at runtime
-RUN python3.11 -m pip install --no-cache-dir /opt/app_runtime/ifc-bonsai-mcp
-RUN python3.11 -m pip install --no-cache-dir websockets httpx
+# Install IfcOpenShell for direct IFC tools (no MCP server needed)
+RUN python3.11 -m pip install --no-cache-dir ifcopenshell
 
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
-COPY main.py blender_generator.py mcp_client.py start.sh ./
+COPY main.py ifc_tools.py blender_generator.py start.sh ./
 RUN chmod +x start.sh
 
 EXPOSE ${PORT}
