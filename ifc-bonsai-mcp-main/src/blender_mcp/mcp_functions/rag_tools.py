@@ -4,28 +4,7 @@ This module implements a high-performance Retrieval-Augmented Generation (RAG) s
 for IFC/OpenShell knowledge base access. It provides semantic search capabilities across
 IFC documentation, function signatures, and usage patterns.
 
-Architecture:
-    - Lazy initialization with background threading for non-blocking startup
-    - Multi-level caching for instant repeated queries
-    - Remote embedding server integration for scalable vector operations
-    - ChromaDB persistence for knowledge base storage
-
-Design Philosophy:
-    Pay upfront (5-10 seconds initialization), instant operations afterwards.
-    All heavy initialization happens once in ensure_ifc_knowledge_ready().
-    Subsequent operations leverage pre-loaded models and caches for sub-millisecond response.
-
-Key Components:
-    - Knowledge Store: Manages document embeddings and vector search
-    - Retriever: Contextual retrieval with ranking and filtering
-    - Cache Layer: Function results and module information caching
-    - Background Initialization: Non-blocking system startup
-
-Performance Characteristics:
-    - Initial setup: 5-10 seconds (one-time cost)
-    - Cached queries: <1ms
-    - New queries: 20-50ms
-    - Module lookups: <5ms with cache
+RAG Features: Optional - requires langchain dependencies
 """
 
 import json
@@ -35,15 +14,34 @@ import threading
 import sys
 import io
 import contextlib
+import logging
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
-from ..mcp_instance import mcp
-from ..rag import IFCDocumentParser, IFCKnowledgeStore, IFCKnowledgeRetriever
-from ..rag.retriever import RetrievalContext
+logger = logging.getLogger(__name__)
 
-_knowledge_store: Optional[IFCKnowledgeStore] = None
-_retriever: Optional[IFCKnowledgeRetriever] = None
+from ..mcp_instance import mcp
+from ..rag import RAG_AVAILABLE
+
+if RAG_AVAILABLE:
+    try:
+        from ..rag import IFCDocumentParser, IFCKnowledgeStore, IFCKnowledgeRetriever
+        from ..rag.retriever import RetrievalContext
+    except Exception as e:
+        logger.warning(f"Failed to import RAG components: {e}")
+        RAG_AVAILABLE = False
+else:
+    logger.info("RAG features disabled - langchain dependencies not available")
+
+if not RAG_AVAILABLE:
+    # RAG not available - define stub classes
+    class IFCDocumentParser: pass
+    class IFCKnowledgeStore: pass
+    class IFCKnowledgeRetriever: pass
+    class RetrievalContext: pass
+
+_knowledge_store: Optional['IFCKnowledgeStore'] = None
+_retriever: Optional['IFCKnowledgeRetriever'] = None
 _fully_initialized: bool = False
 _init_error: Optional[str] = None
 _init_stats: Dict[str, Any] = {}

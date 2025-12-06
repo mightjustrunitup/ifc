@@ -161,8 +161,13 @@ def get_blender_connection():
     
     return _blender_connection
 
-#import all mcp tools, resources, and prompts
-from .mcp_functions import api_tools, analysis_tools, prompts, rag_tools
+# Import all MCP tools, resources, and prompts
+from .mcp_functions import api_tools, analysis_tools, prompts
+try:
+    from .mcp_functions import rag_tools
+except ImportError:
+    rag_tools = None
+    logger.warning("RAG tools not available - langchain dependencies not installed")
 
 def main():
     """Run the MCP server"""

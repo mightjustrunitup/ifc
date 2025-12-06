@@ -1,97 +1,87 @@
-# -----------------------------
-# Stage 1: Builder — build Blender, addons, MCP server
-# -----------------------------
-FROM ubuntu:22.04 AS builder
+# ============================================================================
+# Multi-stage build: Blender (download pre-built) + FastAPI server
+# MCP server runs in separate service
+# ============================================================================
 
-ENV DEBIAN_FRONTEND=noninteractive
-WORKDIR /build
+# Stage 1: Download Blender binary
+FROM ubuntu:22.04 as blender-downloader
+RUN apt-get update && apt-get install -y wget xz-utils && rm -rf /var/lib/apt/lists/*
+WORKDIR /tmp
+RUN wget -q https://download.blender.org/release/Blender4.2/blender-4.2.0-linux-x64.tar.xz && \
+    tar -xf blender-4.2.0-linux-x64.tar.xz && \
+    rm blender-4.2.0-linux-x64.tar.xz
 
-# System dependencies
-RUN apt-get update && apt-get install -y \
-    wget unzip bzip2 git libfreetype6 libgl1-mesa-glx libglu1-mesa \
-    libxi6 libxrender1 libgomp1 libgeos-dev xvfb libxkbcommon0 \
-    python3.11 python3.11-venv python3-pip \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Blender 4.4
-RUN wget -q https://download.blender.org/release/Blender4.4/blender-4.4.0-linux-x64.tar.xz \
-    && tar -xf blender-4.4.0-linux-x64.tar.xz \
-    && mv blender-4.4.0-linux-x64 /opt/blender \
-    && ln -s /opt/blender/blender /usr/local/bin/blender
-
-# Install BlenderBIM / Bonsai add-on
-RUN wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/blenderbim-240602/blenderbim-240602-py311-linux.zip \
-    -O /root/blenderbim.zip \
-    && mkdir -p /opt/blender_addons/scripts/addons \
-    && unzip -q /root/blenderbim.zip -d /opt/blender_addons/scripts/addons/ \
-    && rm /root/blenderbim.zip
-
-# Fix shapely & lxml inside Blender's Python
-RUN /opt/blender/4.4/python/bin/python3.11 -m ensurepip \
-    && /opt/blender/4.4/python/bin/python3.11 -m pip install --upgrade pip \
-    && /opt/blender/4.4/python/bin/python3.11 -m pip install shapely==2.0.2 lxml==5.1.0
-
-# Clone and install MCP server (ifc-bonsai-mcp)
-RUN git clone https://github.com/Show2Instruct/ifc-bonsai-mcp.git /opt/ifc-bonsai-mcp
-WORKDIR /opt/ifc-bonsai-mcp
-# Ensure packaging/build tools are available, then build a wheel for runtime install
-RUN python3.11 -m pip install --upgrade pip setuptools wheel build || true
-RUN python3.11 -m pip wheel . -w /opt/wheels || true
-RUN python3.11 -m pip install . || true
-
-# Install libraries needed by MCP + Blender scripts
-RUN /opt/blender/4.4/python/bin/python3.11 -m pip install websockets trimesh numpy
-
-# Prepare runtime folder for final image
-RUN mkdir -p /opt/app_runtime
-RUN cp -r /opt/blender /opt/app_runtime/blender
-RUN cp -r /opt/blender_addons /opt/app_runtime/blender_addons
-
-# -----------------------------
-# Stage 2: Runtime — minimal / final image
-# -----------------------------
+# Stage 2: Runtime — FastAPI app with Blender (MCP server runs separately on different service)
 FROM ubuntu:22.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# Install only runtime dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    libfreetype6 libgl1-mesa-glx libglu1-mesa libxi6 libxrender1 \
-    libgomp1 libgeos-dev xvfb libxkbcommon0 python3.11 python3.11-venv python3.11-distutils \
+    unzip \
+    python3 \
+    python3-pip \
+    python3-dev \
+    xvfb \
+    libxkbcommon-x11-0 \
+    libdbus-1-3 \
+    libfontconfig1 \
+    libx11-6 \
+    libxext6 \
+    libxrender1 \
+    libxkbcommon0 \
+    libgbm1 \
+    libgles2-mesa \
+    libgl1-mesa-glx \
+    libxi6 \
+    libgomp1 \
+    curl \
+    wget \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy built Blender + MCP + addons from builder
-COPY --from=builder /opt/app_runtime /opt/app_runtime
-COPY --from=builder /opt/ifc-bonsai-mcp /opt/app_runtime/ifc-bonsai-mcp
-COPY --from=builder /opt/wheels /opt/wheels
+# Copy Blender from builder stage
+COPY --from=blender-downloader /tmp/blender-4.2.0-linux-x64 /opt/blender
+ENV PATH="/opt/blender:$PATH"
+ENV BLENDER_EXECUTABLE="/opt/blender/blender"
 
-# Setup Blender config directory with addons
-RUN mkdir -p /root/.config/blender/4.4/scripts && \
-    ln -s /opt/app_runtime/blender_addons/scripts/addons /root/.config/blender/4.4/scripts/addons
+# Note: BlenderBIM addon NOT needed on Railway
+# The addon runs on local Blender where actual IFC generation happens
+# Railway blenderbim-backend only acts as HTTP API to call external MCP server
 
-# Add Blender to PATH
-ENV PATH="/opt/app_runtime/blender:${PATH}"
-RUN ln -s /opt/app_runtime/blender/blender /usr/local/bin/blender
+# Install Python dependencies for FastAPI
+WORKDIR /app
+RUN pip3 install --no-cache-dir \
+    fastapi \
+    uvicorn \
+    pydantic \
+    requests \
+    websockets
 
-# Copy and install your application
-COPY requirements.txt ./
-
-# Make sure Python 3.11 has pip & modern packaging tools, then install
-RUN python3.11 -m ensurepip || true
-RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
-
-# Make python3 point to python3.11 so scripts using `python3` use the same interpreter
-RUN if [ -x /usr/bin/python3.11 ]; then update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 || ln -sf /usr/bin/python3.11 /usr/bin/python3; fi
-
-# Install the MCP wheel(s) produced in the builder stage using runtime python3
-RUN ls -la /opt/wheels || true
-RUN python3 -m pip install --no-cache-dir /opt/wheels/*.whl || true
-
-RUN python3 -m pip install --no-cache-dir -r requirements.txt
-
-COPY main.py blender_generator.py mcp_client.py start.sh ./
+# Copy application code (no mcp_client.py — MCP runs separately)
+COPY main.py .
+COPY execute_code.py .
+COPY blender_generator.py .
+COPY start.sh .
+COPY requirements.txt .
 RUN chmod +x start.sh
 
-EXPOSE ${PORT}
+# Install Python requirements
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip3 install --no-cache-dir -r requirements.txt
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV MCP_SERVER_URL="http://mcp-server:7777"
+ENV BLENDER_EXECUTABLE="/opt/blender/blender"
+
+# Expose port for FastAPI
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Run FastAPI server (MCP server runs in separate service)
 CMD ["./start.sh"]

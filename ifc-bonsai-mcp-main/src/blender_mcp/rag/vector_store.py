@@ -18,6 +18,18 @@ import json
 import logging
 
 try:
+    # Try new langchain structure first
+    from langchain_core.schema import Document
+    from langchain_core.text_splitter import RecursiveCharacterTextSplitter
+except ImportError:
+    try:
+        # Fall back to old langchain structure
+        from langchain.schema import Document
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+    except ImportError:
+        raise ImportError("langchain or langchain_core is required for RAG features")
+
+try:
     from langchain_huggingface import HuggingFaceEmbeddings
 except ImportError:
     from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -26,8 +38,6 @@ try:
     from langchain_chroma import Chroma
 except ImportError:
     from langchain_community.vectorstores import Chroma
-from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 from .document_parser import IFCDocumentParser
 
