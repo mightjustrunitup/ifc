@@ -4,9 +4,9 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Read MCP server URL from environment variable (Railway will set this)
-# Default to localhost:7777 for local development
-MCP_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:7777")
+# Get MCP URL from environment (for Railway deployment)
+# Falls back to localhost for local development
+MCP_URL = os.environ.get("MCP_SERVER_URL", "http://localhost:7777").rstrip('/')
 
 def call_mcp_tool(tool_name: str, params: dict) -> dict:
     """Call an MCP4IFC tool with given parameters"""
@@ -96,3 +96,4 @@ def add_window(wall_id: str, position: float = 0.5, width: float = 1.2, height: 
         "height": height,
         "sill_height": sill_height
     })
+
