@@ -53,7 +53,7 @@ def create_http_app() -> FastAPI:
     
     # Check for tools in various possible locations
     tools_found = False
-    for attr_name in ['_tools', 'tools', '_handlers', 'handlers', '_resources', 'resources']:
+    for attr_name in ['_tool_manager', '_tools', 'tools', '_handlers', 'handlers', '_resources', 'resources']:
         if hasattr(mcp, attr_name):
             attr_val = getattr(mcp, attr_name)
             logger.info(f"  {attr_name}: {type(attr_val)} with {len(attr_val) if hasattr(attr_val, '__len__') else '?'} items")
@@ -99,52 +99,61 @@ def create_http_app() -> FastAPI:
             mcp_instance = app.state.mcp
             tools_list = []
             
-            # Try to get tools from various possible locations in FastMCP
-            tools_dict = None
-            
-            if hasattr(mcp_instance, '_tools') and mcp_instance._tools:
-                tools_dict = mcp_instance._tools
-                logger.info(f"Found tools in _tools: {len(tools_dict)}")
-            elif hasattr(mcp_instance, 'tools') and mcp_instance.tools:
-                tools_dict = mcp_instance.tools
-                logger.info(f"Found tools in tools: {len(tools_dict)}")
-            
-            if tools_dict:
-                for tool_name, tool_impl in tools_dict.items():
-                    # Extract tool metadata
-                    description = ""
-                    input_schema = {}
-                    
-                    # Try to get description and schema from tool implementation
-                    if hasattr(tool_impl, 'description'):
-                        description = tool_impl.description
-                    
-                    if hasattr(tool_impl, 'schema'):
-                        input_schema = tool_impl.schema
-                    elif hasattr(tool_impl, 'inputSchema'):
-                        input_schema = tool_impl.inputSchema
-                    
-                    tool_schema = {
-                        "name": tool_name,
-                        "description": description,
-                        "inputSchema": input_schema
-                    }
-                    tools_list.append(tool_schema)
+            # Try using the list_tools() method from FastMCP
+            try:
+                # Call the async list_tools method
+                tools_result = await mcp_instance.list_tools()
+                logger.info(f"Got tools from list_tools(): {tools_result}")
                 
-                logger.info(f"Returning {len(tools_list)} tools")
-            else:
-                logger.warning(f"No tools found in mcp instance")
-                # Debug: show what attributes exist
-                attrs = [attr for attr in dir(mcp_instance) if not attr.startswith('__')]
-                logger.debug(f"Available attributes: {attrs[:20]}")
+                if tools_result and hasattr(tools_result, 'tools'):
+                    for tool in tools_result.tools:
+                        tool_schema = {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "inputSchema": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
+                        }
+                        tools_list.append(tool_schema)
+                    logger.info(f"Converted to schema: {len(tools_list)} tools")
+            except Exception as e:
+                logger.warning(f"Failed to get tools via list_tools() method: {e}")
+                
+                # Try to get tools from _tool_manager
+                if hasattr(mcp_instance, '_tool_manager'):
+                    tool_manager = mcp_instance._tool_manager
+                    logger.info(f"Tool manager type: {type(tool_manager)}")
+                    logger.info(f"Tool manager attributes: {dir(tool_manager)}")
+                    
+                    # Try various ways to get tools from the manager
+                    if hasattr(tool_manager, 'tools'):
+                        tools_dict = tool_manager.tools
+                        logger.info(f"Found {len(tools_dict)} tools in tool_manager.tools")
+                        for tool_name, tool_impl in tools_dict.items():
+                            tool_schema = {
+                                "name": tool_name,
+                                "description": getattr(tool_impl, 'description', ''),
+                                "inputSchema": getattr(tool_impl, 'schema', {}) or getattr(tool_impl, 'inputSchema', {})
+                            }
+                            tools_list.append(tool_schema)
+                    elif hasattr(tool_manager, '_tools'):
+                        tools_dict = tool_manager._tools
+                        logger.info(f"Found {len(tools_dict)} tools in tool_manager._tools")
+                        for tool_name, tool_impl in tools_dict.items():
+                            tool_schema = {
+                                "name": tool_name,
+                                "description": getattr(tool_impl, 'description', ''),
+                                "inputSchema": getattr(tool_impl, 'schema', {}) or getattr(tool_impl, 'inputSchema', {})
+                            }
+                            tools_list.append(tool_schema)
             
+            logger.info(f"Returning {len(tools_list)} tools")
             return {"tools": tools_list}
         
         except Exception as e:
             logger.error(f"Error listing tools: {e}", exc_info=True)
+            import traceback
             return JSONResponse(
                 status_code=500,
-                content={"error": str(e)}
+                content={"error": str(e), "traceback": traceback.format_exc()[:500]}
             )
     
     @app.post("/tools/call")
@@ -154,80 +163,86 @@ def create_http_app() -> FastAPI:
             mcp_instance = app.state.mcp
             logger.info(f"Tool call request: {request.name} with args: {request.arguments}")
             
-            # Find tools dict from various possible locations
-            tools_dict = None
-            if hasattr(mcp_instance, '_tools') and mcp_instance._tools:
-                tools_dict = mcp_instance._tools
-            elif hasattr(mcp_instance, 'tools') and mcp_instance.tools:
-                tools_dict = mcp_instance.tools
-            
-            # Check if tool exists
-            if not tools_dict:
-                logger.error("No tools registered in MCP")
-                return JSONResponse(
-                    status_code=503,
-                    content={"error": "No tools available in MCP"}
-                )
-            
-            if request.name not in tools_dict:
-                available = list(tools_dict.keys())
-                logger.error(f"Tool '{request.name}' not found. Available tools: {available}")
-                return JSONResponse(
-                    status_code=404,
-                    content={"error": f"Tool '{request.name}' not found", "available_tools": available}
-                )
-            
-            tool_impl = tools_dict[request.name]
-            logger.info(f"Found tool: {tool_impl}")
-            
-            # Try to call the tool
+            # Try using the call_tool() method from FastMCP
             try:
-                from mcp.server.fastmcp import Context
-                ctx = Context()
-                
-                # Call the tool function
-                if hasattr(tool_impl, 'func'):
-                    logger.info(f"Calling via func attribute")
-                    result = tool_impl.func(ctx, **request.arguments)
-                elif callable(tool_impl):
-                    logger.info(f"Calling tool_impl directly")
-                    result = tool_impl(ctx, **request.arguments)
-                else:
-                    logger.error(f"Tool is not callable: {type(tool_impl)}")
-                    return JSONResponse(
-                        status_code=500,
-                        content={"error": f"Tool implementation is not callable"}
-                    )
-                
+                logger.info(f"Calling mcp.call_tool('{request.name}', {request.arguments})")
+                result = await mcp_instance.call_tool(request.name, request.arguments)
                 logger.info(f"Tool result: {result}")
                 
                 return ToolCallResponse(
                     success=True,
                     result=result
                 )
-            
-            except TypeError as te:
-                logger.warning(f"Tool call with context failed: {te}. Trying without context...")
+            except Exception as e:
+                logger.error(f"Error calling tool via mcp.call_tool(): {e}", exc_info=True)
                 
-                # Try calling without context if it fails
+                # Fallback: Try to find and call the tool directly
+                tools_dict = None
+                
+                if hasattr(mcp_instance, '_tool_manager'):
+                    tool_manager = mcp_instance._tool_manager
+                    if hasattr(tool_manager, 'tools'):
+                        tools_dict = tool_manager.tools
+                    elif hasattr(tool_manager, '_tools'):
+                        tools_dict = tool_manager._tools
+                
+                if not tools_dict:
+                    return JSONResponse(
+                        status_code=503,
+                        content={"error": "No tools available in MCP"}
+                    )
+                
+                if request.name not in tools_dict:
+                    available = list(tools_dict.keys())
+                    logger.error(f"Tool '{request.name}' not found. Available: {available}")
+                    return JSONResponse(
+                        status_code=404,
+                        content={"error": f"Tool '{request.name}' not found", "available_tools": available}
+                    )
+                
+                tool_impl = tools_dict[request.name]
+                logger.info(f"Found tool: {tool_impl}")
+                
+                # Try to call the tool
                 try:
-                    if hasattr(tool_impl, 'func'):
-                        result = tool_impl.func(**request.arguments)
-                    else:
-                        result = tool_impl(**request.arguments)
+                    from mcp.server.fastmcp import Context
+                    ctx = Context()
                     
-                    logger.info(f"Tool result (no context): {result}")
+                    if hasattr(tool_impl, 'func'):
+                        result = tool_impl.func(ctx, **request.arguments)
+                    elif callable(tool_impl):
+                        result = tool_impl(ctx, **request.arguments)
+                    else:
+                        return JSONResponse(
+                            status_code=500,
+                            content={"error": "Tool implementation is not callable"}
+                        )
+                    
+                    logger.info(f"Tool result: {result}")
                     
                     return ToolCallResponse(
                         success=True,
                         result=result
                     )
-                except Exception as e2:
-                    logger.error(f"Tool call failed even without context: {e2}", exc_info=True)
-                    return JSONResponse(
-                        status_code=400,
-                        content={"error": f"Tool execution failed: {str(e2)}"}
-                    )
+                
+                except TypeError as te:
+                    # Try without context
+                    try:
+                        if hasattr(tool_impl, 'func'):
+                            result = tool_impl.func(**request.arguments)
+                        else:
+                            result = tool_impl(**request.arguments)
+                        
+                        return ToolCallResponse(
+                            success=True,
+                            result=result
+                        )
+                    except Exception as e2:
+                        logger.error(f"Tool call failed: {e2}", exc_info=True)
+                        return JSONResponse(
+                            status_code=400,
+                            content={"error": f"Tool execution failed: {str(e2)}"}
+                        )
         
         except Exception as e:
             logger.error(f"Error calling tool: {e}", exc_info=True)
@@ -248,7 +263,13 @@ def create_http_app() -> FastAPI:
             
             # Count tools from various possible locations
             tools_count = 0
-            if hasattr(mcp_instance, '_tools'):
+            if hasattr(mcp_instance, '_tool_manager'):
+                tool_manager = mcp_instance._tool_manager
+                if hasattr(tool_manager, 'tools'):
+                    tools_count = len(tool_manager.tools)
+                elif hasattr(tool_manager, '_tools'):
+                    tools_count = len(tool_manager._tools)
+            elif hasattr(mcp_instance, '_tools'):
                 tools_count = len(mcp_instance._tools) if mcp_instance._tools else 0
             elif hasattr(mcp_instance, 'tools'):
                 tools_count = len(mcp_instance.tools) if mcp_instance.tools else 0
