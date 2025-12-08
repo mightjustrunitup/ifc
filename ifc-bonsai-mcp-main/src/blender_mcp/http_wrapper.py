@@ -105,15 +105,24 @@ def create_http_app() -> FastAPI:
                 tools_result = await mcp_instance.list_tools()
                 logger.info(f"Got tools from list_tools(): {tools_result}")
                 
-                if tools_result and hasattr(tools_result, 'tools'):
-                    for tool in tools_result.tools:
-                        tool_schema = {
-                            "name": tool.name,
-                            "description": tool.description,
-                            "inputSchema": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
-                        }
-                        tools_list.append(tool_schema)
-                    logger.info(f"Converted to schema: {len(tools_list)} tools")
+                # Handle both cases: result object with .tools attribute or direct list
+                tools_to_process = []
+                if tools_result:
+                    if hasattr(tools_result, 'tools'):
+                        # Result is an object with tools attribute (e.g., ListToolsResult)
+                        tools_to_process = tools_result.tools
+                    elif isinstance(tools_result, list):
+                        # Result is a direct list of Tool objects
+                        tools_to_process = tools_result
+                
+                for tool in tools_to_process:
+                    tool_schema = {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "inputSchema": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
+                    }
+                    tools_list.append(tool_schema)
+                logger.info(f"Converted to schema: {len(tools_list)} tools")
             except Exception as e:
                 logger.warning(f"Failed to get tools via list_tools() method: {e}")
                 
@@ -287,4 +296,5 @@ def create_http_app() -> FastAPI:
             )
     
     return app
+
 
