@@ -270,18 +270,24 @@ def create_http_app() -> FastAPI:
         try:
             mcp_instance = app.state.mcp
             
-            # Count tools from various possible locations
+            # Count tools using the same method as list_tools endpoint
             tools_count = 0
-            if hasattr(mcp_instance, '_tool_manager'):
-                tool_manager = mcp_instance._tool_manager
-                if hasattr(tool_manager, 'tools'):
-                    tools_count = len(tool_manager.tools)
-                elif hasattr(tool_manager, '_tools'):
-                    tools_count = len(tool_manager._tools)
-            elif hasattr(mcp_instance, '_tools'):
-                tools_count = len(mcp_instance._tools) if mcp_instance._tools else 0
-            elif hasattr(mcp_instance, 'tools'):
-                tools_count = len(mcp_instance.tools) if mcp_instance.tools else 0
+            try:
+                tools_result = await mcp_instance.list_tools()
+                if tools_result:
+                    if hasattr(tools_result, 'tools'):
+                        tools_count = len(tools_result.tools)
+                    elif isinstance(tools_result, list):
+                        tools_count = len(tools_result)
+            except Exception as e:
+                logger.debug(f"Could not get tool count via list_tools(): {e}")
+                # Fallback to checking _tool_manager
+                if hasattr(mcp_instance, '_tool_manager'):
+                    tool_manager = mcp_instance._tool_manager
+                    if hasattr(tool_manager, 'tools'):
+                        tools_count = len(tool_manager.tools)
+                    elif hasattr(tool_manager, '_tools'):
+                        tools_count = len(tool_manager._tools)
             
             return {
                 "status": "healthy",
@@ -296,5 +302,6 @@ def create_http_app() -> FastAPI:
             )
     
     return app
+
 
 
