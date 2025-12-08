@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, Any
 import os
+import asyncio
+import threading
+from fastapi import FastAPI
 
 from .mcp_instance import mcp
 
@@ -170,8 +173,44 @@ except ImportError:
     logger.warning("RAG tools not available - langchain dependencies not installed")
 
 def main():
-    """Run the MCP server"""
-    mcp.run()
+    """Run the MCP server with optional HTTP wrapper"""
+    import sys
+    
+    # Check if running with HTTP wrapper
+    use_http = os.environ.get("USE_HTTP_WRAPPER", "false").lower() == "true"
+    
+    if use_http:
+        logger.info("Starting with HTTP wrapper")
+        run_with_http()
+    else:
+        logger.info("Starting MCP server (stdio)")
+        mcp.run()
+
+
+def run_with_http():
+    """Run MCP server with HTTP wrapper support"""
+    import uvicorn
+    from .http_wrapper import create_http_app
+    
+    # Create HTTP app
+    http_app = create_http_app()
+    
+    # Mount the MCP app to HTTP app for hybrid mode
+    # This allows the HTTP wrapper to coexist with MCP
+    
+    # Get HTTP port from environment
+    http_port = int(os.environ.get("HTTP_PORT", "8000"))
+    
+    logger.info(f"Starting HTTP server on port {http_port}")
+    
+    # Run HTTP server
+    uvicorn.run(
+        http_app,
+        host="0.0.0.0",
+        port=http_port,
+        log_level="info"
+    )
 
 if __name__ == "__main__":
     main()
+
