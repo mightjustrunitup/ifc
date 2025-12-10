@@ -28,23 +28,51 @@ def main():
     
     # CRITICAL: Import tools FIRST to register them with MCP
     logger.info("Step 1: Importing MCP tools to register them...")
+    
+    tools_imported = 0
+    
     try:
+        logger.info("  Importing api_tools...")
         from blender_mcp.mcp_functions import api_tools
         logger.info("  ✓ API tools imported")
+        tools_imported += 1
     except Exception as e:
-        logger.error(f"  ✗ Failed to import API tools: {e}")
+        logger.error(f"  ✗ Failed to import API tools: {e}", exc_info=True)
     
     try:
+        logger.info("  Importing analysis_tools...")
         from blender_mcp.mcp_functions import analysis_tools
         logger.info("  ✓ Analysis tools imported")
+        tools_imported += 1
     except Exception as e:
-        logger.error(f"  ✗ Failed to import analysis tools: {e}")
+        logger.error(f"  ✗ Failed to import analysis tools: {e}", exc_info=True)
     
     try:
+        logger.info("  Importing prompts...")
         from blender_mcp.mcp_functions import prompts
         logger.info("  ✓ Prompts imported")
+        tools_imported += 1
     except Exception as e:
-        logger.error(f"  ✗ Failed to import prompts: {e}")
+        logger.error(f"  ✗ Failed to import prompts: {e}", exc_info=True)
+    
+    logger.info(f"\nStep 1 Complete: {tools_imported} tool modules imported")
+    
+    # Now verify MCP has the tools registered
+    logger.info("\nStep 1.5: Verifying MCP tool registration...")
+    try:
+        from blender_mcp.mcp_instance import mcp
+        if hasattr(mcp, '_tool_manager'):
+            tool_manager = mcp._tool_manager
+            if hasattr(tool_manager, 'tools'):
+                tools_count = len(tool_manager.tools)
+                logger.info(f"  ✓ MCP has {tools_count} tools registered")
+            elif hasattr(tool_manager, '_tools'):
+                tools_count = len(tool_manager._tools)
+                logger.info(f"  ✓ MCP has {tools_count} tools registered")
+            else:
+                logger.warning("  ⚠️  Cannot find tools in tool_manager")
+    except Exception as e:
+        logger.error(f"  ✗ Error checking tool registration: {e}", exc_info=True)
     
     # Now create the HTTP app - tools are already registered
     logger.info("\nStep 2: Creating HTTP app with registered tools...")
@@ -53,7 +81,7 @@ def main():
         app = create_http_app()
         logger.info("  ✓ HTTP app created successfully")
     except Exception as e:
-        logger.error(f"  ✗ Failed to create HTTP app: {e}")
+        logger.error(f"  ✗ Failed to create HTTP app: {e}", exc_info=True)
         sys.exit(1)
     
     http_port = int(os.environ.get("HTTP_PORT", "8000"))
@@ -63,7 +91,8 @@ def main():
     logger.info(f"  - GET /               - Health check")
     logger.info(f"  - GET /health         - Detailed health")
     logger.info(f"  - GET /tools/list     - List all MCP tools")
-    logger.info(f"  - POST /tools/call    - Call a specific tool")
+    logger.info(f"  - GET /tools/call     - Call a specific tool")
+    logger.info(f"  - POST /tools/execute - Execute a tool")
     logger.info("=" * 60)
     
     uvicorn.run(
@@ -75,4 +104,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
