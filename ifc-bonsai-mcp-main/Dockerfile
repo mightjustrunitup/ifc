@@ -12,9 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Download pre-built Blender binary (much faster than compiling)
-RUN wget -q https://mirror.clarkson.edu/blender/release/Blender4.1/blender-4.1.1-linux-x64.tar.xz && \
-    tar -xf blender-4.1.1-linux-x64.tar.xz && \
-    rm blender-4.1.1-linux-x64.tar.xz
+# Using Blender 4.0 which is stable and widely available
+RUN cd /tmp && \
+    wget -q https://download.blender.org/release/Blender4.0/blender-4.0.2-linux-x64.tar.xz -O blender.tar.xz && \
+    tar -xf blender.tar.xz && \
+    rm blender.tar.xz
 
 # Stage 2: Runtime with Python + MCP + Blender
 FROM python:3.11-slim
@@ -33,8 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Blender from builder stage
-COPY --from=blender-builder /tmp/blender-4.1.1-linux-x64 /opt/blender
+# Copy Blender from builder stage (find the blender directory)
+COPY --from=blender-builder /tmp/blender-* /opt/blender
 
 # Create symlink for easy access
 RUN ln -s /opt/blender/blender /usr/local/bin/blender
@@ -119,6 +121,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 # Run startup script
 CMD ["/app/start.sh"]
+
+
 
 
 
