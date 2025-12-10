@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libxrender1 \
     libxkbcommon0 \
+    xz-utils \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
