@@ -351,6 +351,21 @@ def create_http_app() -> FastAPI:
                 }
             )
     
+    @app.get("/test/routes")
+    async def test_routes():
+        """Debug endpoint to list all registered routes"""
+        routes = []
+        for route in app.routes:
+            if hasattr(route, 'path') and hasattr(route, 'methods'):
+                routes.append({
+                    "path": route.path,
+                    "methods": list(route.methods) if route.methods else []
+                })
+        return {
+            "registered_routes": routes,
+            "total": len(routes)
+        }
+    
     @app.get("/health")
     async def health():
         """Health check endpoint"""
@@ -389,6 +404,7 @@ def create_http_app() -> FastAPI:
             )
     
     return app
+
 
 
 
