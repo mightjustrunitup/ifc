@@ -30,40 +30,13 @@ class ToolCallResponse(BaseModel):
 def create_http_app() -> FastAPI:
     """Create a FastAPI app that wraps the MCP server with HTTP endpoints"""
     
-    # Import tools FIRST to ensure they are registered with MCP
-    logger.info("Importing MCP tools...")
-    try:
-        from .mcp_functions import api_tools, analysis_tools, prompts
-        logger.info("✓ Core MCP tools imported")
-    except Exception as e:
-        logger.error(f"✗ Failed to import core MCP tools: {e}", exc_info=True)
+    logger.info("Creating HTTP app...")
     
-    try:
-        from .mcp_functions import rag_tools
-        logger.info("✓ RAG tools imported")
-    except Exception as e:
-        logger.info(f"RAG tools not available: {e}")
-    
-    # Now import the MCP instance (tools should be registered by now)
+    # DON'T import tools here - they should already be imported by hybrid_server.py
+    # Just import the MCP instance (tools should be registered by now)
     from .mcp_instance import mcp
     
-    # Debug: Check what's actually in the mcp object
     logger.info(f"MCP instance type: {type(mcp)}")
-    logger.info(f"MCP instance attributes: {[attr for attr in dir(mcp) if not attr.startswith('__')]}")
-    
-    # Check for tools in various possible locations
-    tools_found = False
-    for attr_name in ['_tool_manager', '_tools', 'tools', '_handlers', 'handlers', '_resources', 'resources']:
-        if hasattr(mcp, attr_name):
-            attr_val = getattr(mcp, attr_name)
-            logger.info(f"  {attr_name}: {type(attr_val)} with {len(attr_val) if hasattr(attr_val, '__len__') else '?'} items")
-            if hasattr(attr_val, '__len__') and len(attr_val) > 0:
-                tools_found = True
-    
-    if not tools_found:
-        logger.warning("⚠️  No tools found in any expected attribute")
-    else:
-        logger.info("✓ Tools loaded successfully")
     
     app = FastAPI(
         title="MCP HTTP Wrapper",
@@ -99,11 +72,13 @@ def create_http_app() -> FastAPI:
             mcp_instance = app.state.mcp
             tools_list = []
             
+            logger.info("[/tools/list] Getting tools...")
+            
             # Try using the list_tools() method from FastMCP
             try:
-                # Call the async list_tools method
+                logger.info("[/tools/list] Calling mcp.list_tools()...")
                 tools_result = await mcp_instance.list_tools()
-                logger.info(f"Got tools from list_tools(): {tools_result}")
+                logger.info(f"[/tools/list] Got result: {type(tools_result)}")
                 
                 # Handle both cases: result object with .tools attribute or direct list
                 tools_to_process = []
@@ -115,6 +90,7 @@ def create_http_app() -> FastAPI:
                         # Result is a direct list of Tool objects
                         tools_to_process = tools_result
                 
+                logger.info(f"[/tools/list] Processing {len(tools_to_process)} tools...")
                 for tool in tools_to_process:
                     tool_schema = {
                         "name": tool.name,
@@ -122,43 +98,52 @@ def create_http_app() -> FastAPI:
                         "inputSchema": tool.inputSchema if hasattr(tool, 'inputSchema') else {}
                     }
                     tools_list.append(tool_schema)
-                logger.info(f"Converted to schema: {len(tools_list)} tools")
-            except Exception as e:
-                logger.warning(f"Failed to get tools via list_tools() method: {e}")
+                logger.info(f"[/tools/list] Converted to schema: {len(tools_list)} tools")
                 
-                # Try to get tools from _tool_manager
-                if hasattr(mcp_instance, '_tool_manager'):
-                    tool_manager = mcp_instance._tool_manager
-                    logger.info(f"Tool manager type: {type(tool_manager)}")
-                    logger.info(f"Tool manager attributes: {dir(tool_manager)}")
+                if len(tools_list) > 0:
+                    logger.info(f"[/tools/list] Successfully returning {len(tools_list)} tools")
+                    return {"tools": tools_list}
                     
-                    # Try various ways to get tools from the manager
-                    if hasattr(tool_manager, 'tools'):
-                        tools_dict = tool_manager.tools
-                        logger.info(f"Found {len(tools_dict)} tools in tool_manager.tools")
-                        for tool_name, tool_impl in tools_dict.items():
-                            tool_schema = {
-                                "name": tool_name,
-                                "description": getattr(tool_impl, 'description', ''),
-                                "inputSchema": getattr(tool_impl, 'schema', {}) or getattr(tool_impl, 'inputSchema', {})
-                            }
-                            tools_list.append(tool_schema)
-                    elif hasattr(tool_manager, '_tools'):
-                        tools_dict = tool_manager._tools
-                        logger.info(f"Found {len(tools_dict)} tools in tool_manager._tools")
-                        for tool_name, tool_impl in tools_dict.items():
-                            tool_schema = {
-                                "name": tool_name,
-                                "description": getattr(tool_impl, 'description', ''),
-                                "inputSchema": getattr(tool_impl, 'schema', {}) or getattr(tool_impl, 'inputSchema', {})
-                            }
-                            tools_list.append(tool_schema)
+            except Exception as e:
+                logger.warning(f"[/tools/list] Failed to get tools via list_tools(): {e}")
             
-            logger.info(f"Returning {len(tools_list)} tools")
+            # Fallback: Try to get tools from _tool_manager
+            logger.info("[/tools/list] Trying fallback: checking _tool_manager...")
+            if hasattr(mcp_instance, '_tool_manager'):
+                tool_manager = mcp_instance._tool_manager
+                logger.info(f"[/tools/list] Tool manager attributes: {[a for a in dir(tool_manager) if not a.startswith('__')]}")
+                
+                # Try various ways to get tools from the manager
+                if hasattr(tool_manager, 'tools'):
+                    tools_dict = tool_manager.tools
+                    logger.info(f"[/tools/list] Found {len(tools_dict)} tools in tool_manager.tools")
+                    for tool_name, tool_impl in tools_dict.items():
+                        tool_schema = {
+                            "name": tool_name,
+                            "description": getattr(tool_impl, 'description', ''),
+                            "inputSchema": getattr(tool_impl, 'schema', {}) or getattr(tool_impl, 'inputSchema', {})
+                        }
+                        tools_list.append(tool_schema)
+                elif hasattr(tool_manager, '_tools'):
+                    tools_dict = tool_manager._tools
+                    logger.info(f"[/tools/list] Found {len(tools_dict)} tools in tool_manager._tools")
+                    for tool_name, tool_impl in tools_dict.items():
+                        tool_schema = {
+                            "name": tool_name,
+                            "description": getattr(tool_impl, 'description', ''),
+                            "inputSchema": getattr(tool_impl, 'schema', {}) or getattr(tool_impl, 'inputSchema', {})
+                        }
+                        tools_list.append(tool_schema)
+                else:
+                    logger.warning("[/tools/list] No tools found in tool_manager")
+            else:
+                logger.warning("[/tools/list] No _tool_manager found on MCP instance")
+            
+            logger.info(f"[/tools/list] Returning {len(tools_list)} tools")
             return {"tools": tools_list}
         
         except Exception as e:
-            logger.error(f"Error listing tools: {e}", exc_info=True)
+            logger.error(f"[/tools/list] Error listing tools: {e}", exc_info=True)
             import traceback
             return JSONResponse(
                 status_code=500,
@@ -404,6 +389,7 @@ def create_http_app() -> FastAPI:
             )
     
     return app
+
 
 
 
