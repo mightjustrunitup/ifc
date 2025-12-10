@@ -80,23 +80,36 @@ RUN cat > /app/start.sh << 'EOF'
 set -e
 
 echo "Starting Blender with MCP addon socket server..."
-# Start Blender in headless mode with addon socket server
+# Start Blender in background with socket server
 # The addon will listen on localhost:9876
-export BLENDER_USER_SCRIPTS=/opt/blender/4.1/scripts
-export BLENDER_USER_EXTENSIONS=/opt/blender/4.1/extensions
+export DISPLAY=:99
+Xvfb :99 -screen 0 1024x768x24 &
+XVFB_PID=$!
+sleep 2
 
 # Start Blender in background
-/opt/blender/blender --background --python /app/src/blender_mcp/blender_startup.py &
+/opt/blender/blender --background --python /app/src/blender_mcp/blender_startup.py 2>&1 &
 BLENDER_PID=$!
 
-# Wait for Blender to start and socket to be ready
-sleep 15
+# Wait for Blender socket to be ready
+echo "Waiting for Blender socket server to be ready..."
+for i in {1..30}; do
+    if nc -z localhost 9876 2>/dev/null; then
+        echo "✓ Blender socket server ready"
+        break
+    fi
+    echo "  Waiting... ($i/30)"
+    sleep 1
+done
 
 # Start MCP HTTP server
-echo "Starting MCP HTTP Server..."
+echo "Starting MCP HTTP Server on port 8080..."
 exec python /app/hybrid_server.py
 EOF
 chmod +x /app/start.sh
+
+# Install netcat for socket checking
+RUN apt-get update && apt-get install -y --no-install-recommends netcat-openbsd && rm -rf /var/lib/apt/lists/*
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
@@ -104,8 +117,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 # Run startup script
 CMD ["/app/start.sh"]
-
-
-
-
 
