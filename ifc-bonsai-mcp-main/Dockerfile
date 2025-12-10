@@ -106,7 +106,9 @@ done
 echo "Starting MCP HTTP Server on port 8080..."
 exec python /app/hybrid_server.py
 EOF
-chmod +x /app/start.sh
+
+# Make the script executable
+RUN chmod +x /app/start.sh
 
 # Install netcat for socket checking
 RUN apt-get update && apt-get install -y --no-install-recommends netcat-openbsd && rm -rf /var/lib/apt/lists/*
@@ -117,4 +119,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 # Run startup script
 CMD ["/app/start.sh"]
+
+
 
