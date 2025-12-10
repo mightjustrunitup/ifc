@@ -264,6 +264,108 @@ def create_http_app() -> FastAPI:
                 }
             )
     
+    @app.post("/tools/execute")
+    async def execute_tool(request: ToolCallRequest):
+        """
+        Execute a tool (alias for /tools/call for compatibility with BlenderBIM backend).
+        Request format: {"name": "tool_name", "arguments": {...}}
+        """
+        logger.info(f"Execute tool request: {request.name}")
+        
+        try:
+            mcp_instance = app.state.mcp
+            
+            # Get tools from list_tools
+            try:
+                tools_result = await mcp_instance.list_tools()
+                tools_to_process = []
+                if tools_result:
+                    if hasattr(tools_result, 'tools'):
+                        tools_to_process = tools_result.tools
+                    elif isinstance(tools_result, list):
+                        tools_to_process = tools_result
+                
+                # Convert to dict by name
+                tools_dict = {tool.name: tool for tool in tools_to_process}
+                
+            except Exception as e:
+                logger.warning(f"Could not get tools from list_tools: {e}")
+                if hasattr(mcp_instance, '_tool_manager'):
+                    tools_dict = mcp_instance._tool_manager.tools if hasattr(mcp_instance._tool_manager, 'tools') else {}
+                else:
+                    tools_dict = {}
+            
+            if not tools_dict:
+                return JSONResponse(
+                    status_code=503,
+                    content={"error": "No tools available in MCP"}
+                )
+            
+            if request.name not in tools_dict:
+                available = list(tools_dict.keys())
+                logger.error(f"Tool '{request.name}' not found. Available: {available[:10]}...")
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": f"Tool '{request.name}' not found"}
+                )
+            
+            tool_impl = tools_dict[request.name]
+            logger.info(f"Executing tool: {request.name} with args: {request.arguments}")
+            
+            # Call the tool
+            try:
+                from mcp.server.fastmcp import Context
+                ctx = Context()
+                
+                if hasattr(tool_impl, 'func'):
+                    result = tool_impl.func(ctx, **request.arguments)
+                elif callable(tool_impl):
+                    result = tool_impl(ctx, **request.arguments)
+                else:
+                    return JSONResponse(
+                        status_code=500,
+                        content={"error": "Tool implementation is not callable"}
+                    )
+                
+                logger.info(f"Tool {request.name} completed successfully")
+                
+                return {
+                    "success": True,
+                    "tool": request.name,
+                    "result": result
+                }
+            
+            except TypeError as te:
+                # Try without context
+                try:
+                    if hasattr(tool_impl, 'func'):
+                        result = tool_impl.func(**request.arguments)
+                    else:
+                        result = tool_impl(**request.arguments)
+                    
+                    return {
+                        "success": True,
+                        "tool": request.name,
+                        "result": result
+                    }
+                except Exception as e2:
+                    logger.error(f"Tool execution failed: {e2}", exc_info=True)
+                    return JSONResponse(
+                        status_code=500,
+                        content={"error": str(e2)}
+                    )
+            
+        except Exception as e:
+            import traceback
+            logger.error(f"Execute tool error: {e}", exc_info=True)
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": str(e),
+                    "traceback": traceback.format_exc()[:500]
+                }
+            )
+    
     @app.get("/health")
     async def health():
         """Health check endpoint"""
@@ -302,6 +404,7 @@ def create_http_app() -> FastAPI:
             )
     
     return app
+
 
 
 
