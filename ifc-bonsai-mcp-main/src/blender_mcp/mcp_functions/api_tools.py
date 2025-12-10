@@ -3137,3 +3137,71 @@ def get_trimesh_examples(ctx: Context) -> str:
     }
     
     return json.dumps(examples, indent=2)
+
+
+@mcp.tool()
+def export_ifc(ctx: Context, path: str) -> str:
+    """
+    Export the current IFC model to a file.
+    
+    Parameters:
+        path (str): The file path where the IFC file should be saved (e.g., '/tmp/model.ifc')
+    
+    Returns:
+        str: Success message with file path and size
+    
+    Notes:
+        - The IFC model must already be loaded in memory via IfcStore
+        - Path can be absolute or relative
+        - File will be created even if path directory doesn't exist (if permissions allow)
+    """
+    try:
+        import ifcopenshell
+        from pathlib import Path
+        
+        logger.info(f"[export_ifc] Exporting IFC to: {path}")
+        
+        # Try to get the IFC file from IfcStore
+        try:
+            from blenderbim.bim.ifc import IfcStore
+            ifc_file = IfcStore.file
+        except:
+            # Fallback: try to get from global scope if Blender context available
+            ifc_file = None
+        
+        if not ifc_file:
+            return json.dumps({
+                "success": False,
+                "error": "No IFC file loaded in IfcStore"
+            })
+        
+        # Ensure directory exists
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write the IFC file
+        ifc_file.write(str(output_path))
+        
+        # Verify file was created
+        if output_path.exists():
+            file_size = output_path.stat().st_size
+            logger.info(f"✓ IFC exported successfully: {path} ({file_size} bytes)")
+            return json.dumps({
+                "success": True,
+                "message": f"IFC file exported to {path}",
+                "path": str(output_path.absolute()),
+                "size_bytes": file_size
+            })
+        else:
+            return json.dumps({
+                "success": False,
+                "error": f"File was not created at {path}"
+            })
+    
+    except Exception as e:
+        logger.error(f"[export_ifc] Error: {e}", exc_info=True)
+        return json.dumps({
+            "success": False,
+            "error": str(e)
+        })
+
