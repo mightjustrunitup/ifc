@@ -7,14 +7,15 @@ FROM ubuntu:22.04 AS blender-builder
 WORKDIR /tmp
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
+    ca-certificates \
     libxrender1 \
     libxkbcommon0 \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Download pre-built Blender binary (much faster than compiling)
-# Using Blender 4.0 which is stable and widely available
+# Download Blender (LTS for stability since 4.0 URL fails on Railway)
 RUN cd /tmp && \
-    wget -q https://download.blender.org/release/Blender4.0/blender-4.0.2-linux-x64.tar.xz -O blender.tar.xz && \
+    wget -q https://download.blender.org/release/Blender3.6/blender-3.6.11-linux-x64.tar.xz -O blender.tar.xz && \
     tar -xf blender.tar.xz && \
     rm blender.tar.xz
 
@@ -35,8 +36,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfontconfig1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Blender from builder stage (find the blender directory)
-COPY --from=blender-builder /tmp/blender-* /opt/blender
+# Copy Blender from builder stage (explicit directory name)
+COPY --from=blender-builder /tmp/blender-3.6.11-linux-x64 /opt/blender
 
 # Create symlink for easy access
 RUN ln -s /opt/blender/blender /usr/local/bin/blender
@@ -121,6 +122,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 # Run startup script
 CMD ["/app/start.sh"]
+
 
 
 
