@@ -1,0 +1,49 @@
+# fly.io configuration for IFC Bonsai MCP system
+# Deploys two services:
+# 1. MCP Server (tool definitions + execution with Blender/Bonsai)
+# 2. BlenderBIM Backend (IFC export to Supabase)
+
+app = "ifc-bonsai"
+primary_region = "iad"  # Northern Virginia (fastest for US)
+
+[build]
+  builder = "pacer"  # fly.io's faster builder
+
+# Service 1: MCP Server with Blender + Bonsai
+[services]
+  [[services.ports]]
+    port = 8080
+    handlers = ["http"]
+    
+[env]
+  # MCP Server settings
+  HTTP_PORT = "8080"
+  PYTHONUNBUFFERED = "1"
+
+[processes]
+  # This is the main MCP service
+  web = "cd /app && bash start.sh"
+
+---
+
+# For BlenderBIM backend, you'll need a separate fly.io app
+# Create it with: fly apps create ifc-blenderbim
+# Then deploy from blenderbim-backend folder with:
+# fly deploy --app ifc-blenderbim
+
+# BlenderBIM fly.toml (create as blenderbim-backend/fly.toml):
+# app = "ifc-blenderbim"
+# primary_region = "iad"
+# 
+# [build]
+#   builder = "pacer"
+# 
+# [services]
+#   [[services.ports]]
+#     port = 8080
+#     handlers = ["http"]
+# 
+# [env]
+#   MCP_SERVER_URL = "http://mcp-server:8080"  # Will be http://ifc-bonsai.fly.dev for external
+#   SUPABASE_URL = ""  # Set via: fly secrets set SUPABASE_URL=...
+#   SUPABASE_KEY = ""  # Set via: fly secrets set SUPABASE_KEY=...
