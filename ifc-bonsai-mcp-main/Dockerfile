@@ -48,6 +48,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxkbcommon0 \
     libfreetype6 \
     libfontconfig1 \
+    libxfixes3 \
+    libxext6 \
+    libxi6 \
+    libxinerama1 \
+    libxcursor1 \
+    libxrandr2 \
+    libxdamage1 \
+    libxcomposite1 \
     netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
@@ -157,6 +165,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Run startup script
 CMD ["/app/start.sh"]
+
+
 
 
 
