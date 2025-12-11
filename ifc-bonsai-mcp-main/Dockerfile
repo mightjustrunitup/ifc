@@ -1,46 +1,62 @@
-# Dockerfile for ifc-bonsai-mcp server with Blender
+# Dockerfile for IFC Bonsai MCP Server with Blender + Bonsai
 # Multi-stage build to minimize final image size
+# This serves as both tool definitions AND tool executor
 
-# Stage 1: Blender download and setup
+# Stage 1: Blender download
 FROM ubuntu:22.04 AS blender-builder
 
 WORKDIR /tmp
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
-    libxrender1 \
-    libxkbcommon0 \
     xz-utils \
-    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Download Blender (LTS for stability since 4.0 URL fails on Railway)
-RUN cd /tmp && \
-    wget -q https://download.blender.org/release/Blender3.6/blender-3.6.11-linux-x64.tar.xz -O blender.tar.xz && \
-    tar -xf blender.tar.xz && \
-    rm blender.tar.xz
+# Download Blender 4.4 LTS (more stable)
+RUN wget -q https://download.blender.org/release/Blender4.4/blender-4.4.0-linux-x64.tar.xz && \
+    tar -xf blender-4.4.0-linux-x64.tar.xz && \
+    rm blender-4.4.0-linux-x64.tar.xz
 
-# Stage 2: Runtime with Python + MCP + Blender
+# Stage 2: BlenderBIM addon
+FROM ubuntu:22.04 AS bonsai-builder
+
+WORKDIR /tmp
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    ca-certificates \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download BlenderBIM addon (Bonsai successor)
+RUN wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/blenderbim-240602/blenderbim-240602-py311-linux.zip && \
+    mkdir -p /tmp/bonsai_addon && \
+    unzip -q blenderbim-240602-py311-linux.zip -d /tmp/bonsai_addon && \
+    rm blenderbim-240602-py311-linux.zip
+
+# Stage 3: Runtime
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-# Install system dependencies (minimal set)
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    wget \
     xvfb \
     libxrender1 \
     libxkbcommon0 \
     libfreetype6 \
     libfontconfig1 \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Blender from builder stage (explicit directory name)
-COPY --from=blender-builder /tmp/blender-3.6.11-linux-x64 /opt/blender
+# Copy Blender from builder
+COPY --from=blender-builder /tmp/blender-4.4.0-linux-x64 /opt/blender
 
-# Create symlink for easy access
+# Copy Bonsai addon from builder
+COPY --from=bonsai-builder /tmp/bonsai_addon /root/.config/blender/4.4/scripts/addons
+
+# Create symlink for Blender
 RUN ln -s /opt/blender/blender /usr/local/bin/blender
 
 # Copy all project files
@@ -49,80 +65,56 @@ COPY . /app
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir \
-    mcp-server \
     mcp \
     fastapi \
     uvicorn \
     python-dotenv \
-    rich \
     requests \
-    beautifulsoup4 \
-    tqdm \
-    numpy \
-    scipy \
-    langchain-core \
-    langchain \
-    langchain-community \
-    langchain-huggingface
-
-# Install BlenderBIM addon dependencies
-RUN pip install --no-cache-dir \
     ifcopenshell \
-    lark \
-    networkx
+    trimesh \
+    numpy
 
-# Set Python path to include src directory where blender_mcp module is
+# Set Python path
 ENV PYTHONPATH=/app/src:$PYTHONPATH
-
-# HTTP server port (Railway default: 8080)
 ENV HTTP_PORT=8080
 EXPOSE 8080
 
-# Create startup script that starts Blender + MCP server
+# Create startup script
 RUN cat > /app/start.sh << 'EOF'
 #!/bin/bash
 set -e
 
-echo "Starting Blender with MCP addon socket server..."
-# Start Blender in background with socket server
-# The addon will listen on localhost:9876
+echo "[MCP] Starting virtual display..."
 export DISPLAY=:99
 Xvfb :99 -screen 0 1024x768x24 &
-XVFB_PID=$!
 sleep 2
 
-# Start Blender in background
+echo "[MCP] Starting Blender with Bonsai addon..."
 /opt/blender/blender --background --python /app/src/blender_mcp/blender_startup.py 2>&1 &
 BLENDER_PID=$!
 
-# Wait for Blender socket to be ready
-echo "Waiting for Blender socket server to be ready..."
-for i in {1..30}; do
+echo "[MCP] Waiting for Blender socket on port 9876..."
+for i in {1..60}; do
     if nc -z localhost 9876 2>/dev/null; then
-        echo "✓ Blender socket server ready"
+        echo "[MCP] ✓ Blender ready!"
         break
     fi
-    echo "  Waiting... ($i/30)"
+    echo "[MCP] Attempt $i/60..."
     sleep 1
 done
 
-# Start MCP HTTP server
-echo "Starting MCP HTTP Server on port 8080..."
+echo "[MCP] Starting MCP HTTP Server on port 8080..."
 exec python /app/hybrid_server.py
 EOF
 
-# Make the script executable
 RUN chmod +x /app/start.sh
 
-# Install netcat for socket checking
-RUN apt-get update && apt-get install -y --no-install-recommends netcat-openbsd && rm -rf /var/lib/apt/lists/*
-
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8080/health 2>/dev/null || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/ 2>/dev/null || exit 1
 
-# Run startup script
 CMD ["/app/start.sh"]
+
 
 
 
