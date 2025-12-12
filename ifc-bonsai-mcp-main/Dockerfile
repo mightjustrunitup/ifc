@@ -104,8 +104,8 @@ RUN ln -s /opt/blender/blender /usr/local/bin/blender
 COPY . /app
 
 # Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir \
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir \
     mcp \
     mcp-server \
     fastapi \
@@ -145,13 +145,16 @@ XVFB_PID=$!
 sleep 2
 echo "✓ X display ready"
 
-# Enable Bonsai addon in Blender preferences
+# Enable Bonsai addon in Blender preferences (Blender 4.4 uses different API)
 echo "[2/4] Enabling Bonsai addon..."
 /opt/blender/blender --background --python-expr "
 import bpy
-bpy.context.preferences.addons.enable('bonsai')
-bpy.ops.wm.save_userpref()
-print('✓ Bonsai addon enabled')
+try:
+    bpy.ops.preferences.addon_enable(module='bonsai')
+    bpy.ops.wm.save_userpref()
+    print('✓ Bonsai addon enabled')
+except Exception as e:
+    print(f'⚠ Bonsai addon enable warning: {e}')
 " 2>&1 || true
 
 # Start Blender with MCP socket server
