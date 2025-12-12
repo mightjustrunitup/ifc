@@ -40,10 +40,10 @@ RUN echo "Downloading Blender 4.4..." && \
     rm blender.tar.xz && \
     echo "✓ Blender 4.4 ready"
 
-# Clone Bonsai addon from GitHub
+# Download Bonsai addon from GitHub
 RUN echo "Downloading Bonsai addon build..." && \
     cd /tmp && \
-    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha251211/bonsai_py311-0.8.5-alpha251211-linux-x64.zip -O bonsai.zip && \
+    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha2512111303/bonsai_py311-0.8.5-alpha251211-linux-x64.zip -O bonsai.zip && \
     echo "Extracting Bonsai..." && \
     unzip -q bonsai.zip && \
     mv bonsai_py311-0.8.5-alpha251211-linux-x64 bonsai-addon && \
@@ -194,6 +194,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Launch
 CMD ["/app/start.sh"]
+
+
+
 
 
 
