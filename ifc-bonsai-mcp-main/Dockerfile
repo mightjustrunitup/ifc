@@ -20,9 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxdamage1 \
     libxcomposite1 \
     libx11-6 \
-    libgl1-mesa-glx \
-    libglu1-mesa \
-    mesa-utils \
+    libgl1 \
     xz-utils \
     unzip \
     && update-ca-certificates \
@@ -62,18 +60,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfreetype6 \
     libfontconfig1 \
     libxfixes3 \
+    libx11-6 \
     libsm6 \
     libice6 \
+    libgl1 \
     libxi6 \
     libxinerama1 \
     libxcursor1 \
     libxrandr2 \
     libxdamage1 \
     libxcomposite1 \
-    libx11-6 \
-    libgl1-mesa-glx \
-    libglu1-mesa \
-    mesa-utils \
     netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
@@ -183,6 +179,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Run startup script
 CMD ["/app/start.sh"]
+
 
 
 
