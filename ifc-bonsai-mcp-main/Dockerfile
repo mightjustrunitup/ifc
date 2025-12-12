@@ -1,13 +1,21 @@
 # Dockerfile for IFC Bonsai MCP Server with Blender 4.4 + Bonsai Addon
 # Multi-stage build optimized for fly.io deployment
 
-# Stage 1: Blender 4.4 download and Bonsai addon
+##############################################
+# Stage 1: Blender 4.4 download + dependencies
+##############################################
+
 FROM ubuntu:22.04 AS blender-builder
 
 WORKDIR /tmp
+
+# Required packages for extracting Blender + addon source
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
+    xz-utils \
+    unzip \
+    git \
     libxrender1 \
     libxkbcommon0 \
     libxfixes3 \
@@ -21,12 +29,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcomposite1 \
     libx11-6 \
     libgl1 \
-    xz-utils \
-    unzip \
     && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Download Blender 4.4 LTS (latest stable)
+# Download Blender 4.4 LTS
 RUN echo "Downloading Blender 4.4..." && \
     cd /tmp && \
     wget -q https://download.blender.org/release/Blender4.4/blender-4.4.1-linux-x64.tar.xz -O blender.tar.xz && \
@@ -35,22 +41,21 @@ RUN echo "Downloading Blender 4.4..." && \
     rm blender.tar.xz && \
     echo "✓ Blender 4.4 ready"
 
-# Download and extract Bonsai addon
-RUN echo "Downloading Bonsai addon..." && \
-    cd /tmp && \
-    wget -q https://extensions.blender.org/api/v1/extensions/bonsai/versions/0.8.3/file/ -O bonsai.zip && \
-    echo "Extracting Bonsai..." && \
-    unzip -q bonsai.zip && \
-    rm bonsai.zip && \
+# Clone Bonsai addon from GitHub
+RUN echo "Cloning Bonsai addon source from GitHub..." && \
+    git clone https://github.com/IfcOpenShell/bonsai.git /tmp/bonsai-addon && \
     echo "✓ Bonsai addon ready"
 
-# Stage 2: Runtime with Python + MCP + Blender + Bonsai
+##############################################
+# Stage 2: Runtime with Python + MCP + Blender
+##############################################
+
 FROM ubuntu:22.04
 
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-# Install system dependencies for Blender and X11 + Python
+# System dependencies for Blender + Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
     python3-pip \
@@ -80,17 +85,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/python3.11 /usr/bin/python
 
-# Copy Blender from builder stage
+# Copy Blender from builder
 COPY --from=blender-builder /tmp/blender-4.4.1-linux-x64 /opt/blender
 
-# Copy Bonsai addon to Blender's addons directory
-RUN mkdir -p /root/.config/blender/4.4/scripts/addons
-COPY --from=blender-builder /tmp/bonsai /root/.config/blender/4.4/scripts/addons/bonsai
+# Install Bonsai addon into Blender addons directory
+RUN mkdir -p /root/.config/blender/4.4/scripts/addons/bonsai && \
+    cp -r /tmp/bonsai-addon/* /root/.config/blender/4.4/scripts/addons/bonsai
 
-# Create symlink for easy access
+# Symlink blender for easy access
 RUN ln -s /opt/blender/blender /usr/local/bin/blender
 
-# Copy all project files
+# Copy project files
 COPY . /app
 
 # Install Python dependencies
@@ -111,14 +116,14 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     lark \
     networkx
 
-# Set Python path to include src directory
+# Set Python path to your source
 ENV PYTHONPATH=/app/src:$PYTHONPATH
 
-# HTTP server port
+# Expose HTTP port
 ENV HTTP_PORT=8080
 EXPOSE 8080
 
-# Create startup script
+# Startup script
 RUN cat > /app/start.sh << 'EOF'
 #!/bin/bash
 set -e
@@ -127,7 +132,7 @@ echo "============================================"
 echo "IFC Bonsai MCP Server Starting..."
 echo "============================================"
 
-# Start virtual display for Blender
+# Start virtual display
 echo "[1/4] Starting X virtual display..."
 export DISPLAY=:99
 Xvfb :99 -screen 0 1024x768x24 &
@@ -136,7 +141,7 @@ sleep 2
 echo "✓ X display ready"
 
 # Enable Bonsai addon in Blender preferences
-echo "[2/4] Starting Blender with Bonsai addon..."
+echo "[2/4] Enabling Bonsai addon..."
 /opt/blender/blender --background --python-expr "
 import bpy
 bpy.context.preferences.addons.enable('bonsai')
@@ -144,27 +149,27 @@ bpy.ops.wm.save_userpref()
 print('✓ Bonsai addon enabled')
 " 2>&1 || true
 
-# Start Blender with MCP socket server in background
+# Start Blender with MCP socket server
 echo "[3/4] Starting Blender MCP socket server..."
 /opt/blender/blender --background --python /app/src/blender_mcp/blender_startup.py 2>&1 &
 BLENDER_PID=$!
 
-# Wait for Blender socket to be ready
+# Wait for Blender socket
 echo "[4/4] Waiting for Blender socket server (port 9876)..."
 for i in {1..60}; do
     if nc -z localhost 9876 2>/dev/null; then
-        echo "✓ Blender socket server ready on port 9876"
+        echo "✓ Blender socket ready on port 9876"
         break
     fi
     if [ $i -eq 60 ]; then
-        echo "✗ Timeout waiting for Blender socket server"
+        echo "✗ Timeout waiting for Blender socket"
         exit 1
     fi
     echo "  Attempt $i/60..."
     sleep 1
 done
 
-# Start MCP HTTP server
+# Start HTTP server
 echo ""
 echo "============================================"
 echo "Starting MCP HTTP Server on port 8080"
@@ -174,7 +179,6 @@ echo "  GET  /tools/list"
 echo "  POST /tools/call"
 echo "  GET  /health"
 echo ""
-
 exec python /app/hybrid_server.py
 EOF
 
@@ -184,8 +188,9 @@ RUN chmod +x /app/start.sh
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8080/health 2>/dev/null || exit 1
 
-# Run startup script
+# Launch
 CMD ["/app/start.sh"]
+
 
 
 
