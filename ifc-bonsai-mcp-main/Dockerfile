@@ -93,9 +93,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy Blender from builder
 COPY --from=blender-builder /tmp/blender-4.4.1-linux-x64 /opt/blender
 
-# Install Bonsai addon into Blender addons directory
-RUN mkdir -p /root/.config/blender/4.4/scripts/addons/bonsai && \
-    cp -r /tmp/bonsai-addon/* /root/.config/blender/4.4/scripts/addons/bonsai
+# Copy Bonsai addon from builder and install to Blender addons directory
+RUN mkdir -p /root/.config/blender/4.4/scripts/addons
+COPY --from=blender-builder /tmp/bonsai-addon /root/.config/blender/4.4/scripts/addons/bonsai
 
 # Symlink blender for easy access
 RUN ln -s /opt/blender/blender /usr/local/bin/blender
@@ -195,6 +195,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Launch
 CMD ["/app/start.sh"]
+
+
 
 
 
