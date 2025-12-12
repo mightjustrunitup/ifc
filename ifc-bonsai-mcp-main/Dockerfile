@@ -46,7 +46,8 @@ RUN echo "Downloading Bonsai addon build..." && \
     wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha2512111303/bonsai_py311-0.8.5-alpha251211-linux-x64.zip -O bonsai.zip && \
     echo "Extracting Bonsai..." && \
     unzip -q bonsai.zip && \
-    mv bonsai_py311-0.8.5-alpha251211-linux-x64 bonsai-addon && \
+    ls -la /tmp/ | grep bonsai && \
+    find /tmp -maxdepth 1 -type d -name "*bonsai*" -exec mv {} /tmp/bonsai-addon \; && \
     rm bonsai.zip && \
     echo "✓ Bonsai addon ready"
 
@@ -194,6 +195,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Launch
 CMD ["/app/start.sh"]
+
+
+
 
 
 
