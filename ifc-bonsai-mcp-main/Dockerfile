@@ -9,13 +9,12 @@ FROM ubuntu:22.04 AS blender-builder
 
 WORKDIR /tmp
 
-# Required packages for extracting Blender + addon source
+# Required packages for extracting Blender + addon
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
     xz-utils \
     unzip \
-    git \
     libxrender1 \
     libxkbcommon0 \
     libxfixes3 \
@@ -42,8 +41,13 @@ RUN echo "Downloading Blender 4.4..." && \
     echo "✓ Blender 4.4 ready"
 
 # Clone Bonsai addon from GitHub
-RUN echo "Cloning Bonsai addon source from GitHub..." && \
-    git clone https://github.com/IfcOpenShell/bonsai.git /tmp/bonsai-addon && \
+RUN echo "Downloading Bonsai addon build..." && \
+    cd /tmp && \
+    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha251211/bonsai_py311-0.8.5-alpha251211-linux-x64.zip -O bonsai.zip && \
+    echo "Extracting Bonsai..." && \
+    unzip -q bonsai.zip && \
+    mv bonsai_py311-0.8.5-alpha251211-linux-x64 bonsai-addon && \
+    rm bonsai.zip && \
     echo "✓ Bonsai addon ready"
 
 ##############################################
@@ -190,6 +194,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Launch
 CMD ["/app/start.sh"]
+
+
+
 
 
 
