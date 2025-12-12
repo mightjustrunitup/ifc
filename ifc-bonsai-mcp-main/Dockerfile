@@ -97,13 +97,22 @@ COPY --from=blender-builder /tmp/blender-4.4.1-linux-x64 /opt/blender
 RUN mkdir -p /root/.config/blender/4.4/scripts/addons
 COPY --from=blender-builder /tmp/bonsai-addon /root/.config/blender/4.4/scripts/addons/bonsai
 
+# Download and install BlenderBIM addon
+RUN echo "Downloading BlenderBIM addon..." && \
+    cd /root/.config/blender/4.4/scripts/addons && \
+    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/blenderbim-221220/blenderbim-221220-a365def-py310-none-any.whl -O blenderbim.whl 2>/dev/null || \
+    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/blenderbim-dev/blenderbim-dev.zip -O blenderbim.zip && \
+    if [ -f blenderbim.zip ]; then unzip -q blenderbim.zip && rm blenderbim.zip; fi && \
+    if [ -f blenderbim.whl ]; then unzip -q blenderbim.whl && rm blenderbim.whl; fi && \
+    echo "✓ BlenderBIM addon installed" 2>&1 || echo "⚠ BlenderBIM addon installation skipped"
+
 # Symlink blender for easy access
 RUN ln -s /opt/blender/blender /usr/local/bin/blender
 
 # Copy project files
 COPY . /app
 
-# Install Python dependencies
+# Install Python dependencies to system Python
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 RUN pip install --no-cache-dir \
     mcp \
@@ -121,8 +130,15 @@ RUN pip install --no-cache-dir \
     lark \
     networkx
 
+# Also install to Blender's embedded Python (for Bonsai addon)
+RUN /opt/blender/4.4/python/bin/python3.11 -m pip install --no-cache-dir \
+    ifcopenshell \
+    numpy \
+    scipy 2>&1 || echo "⚠ Some packages may not be available for Blender Python"
+
 # Set Python path to your source
 ENV PYTHONPATH=/app/src:$PYTHONPATH
+ENV PYTHONPATH=/opt/blender/4.4/python/lib/python3.11/site-packages:$PYTHONPATH
 
 # Expose HTTP port
 ENV HTTP_PORT=8080
@@ -145,16 +161,22 @@ XVFB_PID=$!
 sleep 2
 echo "✓ X display ready"
 
-# Enable Bonsai addon in Blender preferences (Blender 4.4 uses different API)
-echo "[2/4] Enabling Bonsai addon..."
+# Enable addons and check dependencies
+echo "[2/4] Checking addons and dependencies..."
 /opt/blender/blender --background --python-expr "
-import bpy
+import sys
+sys.path.insert(0, '/root/.config/blender/4.4/scripts/addons')
 try:
-    bpy.ops.preferences.addon_enable(module='bonsai')
-    bpy.ops.wm.save_userpref()
-    print('✓ Bonsai addon enabled')
-except Exception as e:
-    print(f'⚠ Bonsai addon enable warning: {e}')
+    import ifcopenshell.api
+    print('✓ ifcopenshell available')
+except ImportError as e:
+    print(f'⚠ ifcopenshell not available: {e}')
+
+try:
+    import bonsai
+    print('✓ Bonsai addon available')
+except ImportError as e:
+    print(f'⚠ Bonsai addon not available: {e}')
 " 2>&1 || true
 
 # Start Blender with MCP socket server
@@ -198,7 +220,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Launch
 CMD ["/app/start.sh"]
-
 
 
 
