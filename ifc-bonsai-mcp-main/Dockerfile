@@ -10,6 +10,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libxrender1 \
     libxkbcommon0 \
+    libxfixes3 \
+    libxext6 \
+    libxi6 \
+    libxinerama1 \
+    libxcursor1 \
+    libxrandr2 \
+    libxdamage1 \
+    libxcomposite1 \
     xz-utils \
     unzip \
     && update-ca-certificates \
@@ -165,6 +173,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Run startup script
 CMD ["/app/start.sh"]
+
 
 
 
