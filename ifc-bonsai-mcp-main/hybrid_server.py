@@ -8,6 +8,7 @@ import os
 import sys
 import logging
 import uvicorn
+from fastapi import FastAPI
 
 # Set environment to use HTTP wrapper
 os.environ["USE_HTTP_WRAPPER"] = "true"
@@ -19,8 +20,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("HybridServer")
 
-def main():
-    """Main entry point for hybrid server"""
+# Initialize app at module level (required by Uvicorn)
+app = FastAPI(title="IFC Bonsai MCP Server")
+
+def create_app():
+    """Create and configure the FastAPI application"""
     
     logger.info("=" * 60)
     logger.info("Hybrid MCP + HTTP Server Startup")
@@ -78,12 +82,32 @@ def main():
     logger.info("\nStep 2: Creating HTTP app with registered tools...")
     try:
         from blender_mcp.http_wrapper import create_http_app
-        app = create_http_app()
+        http_app = create_http_app()
         logger.info("  ✓ HTTP app created successfully")
+        
+        # Copy routes from http_app to module-level app
+        for route in http_app.routes:
+            if hasattr(route, 'path'):
+                methods = getattr(route, 'methods', set())
+                logger.info(f"  - {route.path} {methods}")
+        
+        # Return the properly configured app
+        return http_app
     except Exception as e:
         logger.error(f"  ✗ Failed to create HTTP app: {e}", exc_info=True)
         sys.exit(1)
-    
+
+# Initialize app with routes when module is imported
+try:
+    configured_app = create_app()
+    # Replace the module-level app with the fully configured one
+    app.routes = configured_app.routes
+    app.openapi_schema = configured_app.openapi_schema
+except Exception as e:
+    logger.error(f"Failed to initialize app: {e}", exc_info=True)
+
+def main():
+    """Main entry point - called when run as script"""
     http_port = int(os.environ.get("HTTP_PORT", "8000"))
     
     logger.info(f"\nStep 3: Starting server on port {http_port}")
