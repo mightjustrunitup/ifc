@@ -40,12 +40,13 @@ RUN echo "Downloading Blender 4.4..." && \
     rm blender.tar.xz && \
     echo "✓ Blender 4.4 ready"
 
-# Download Bonsai addon build
+# Download Bonsai addon from GitHub
 RUN echo "Downloading Bonsai addon build..." && \
     cd /tmp && \
     wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha2512111303/bonsai_py311-0.8.5-alpha251211-linux-x64.zip -O bonsai.zip && \
     echo "Extracting Bonsai..." && \
     unzip -q bonsai.zip && \
+    ls -la /tmp/ | grep bonsai && \
     find /tmp -maxdepth 1 -type d -name "*bonsai*" -exec mv {} /tmp/bonsai-addon \; && \
     rm bonsai.zip && \
     echo "✓ Bonsai addon ready"
@@ -92,11 +93,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy Blender from builder
 COPY --from=blender-builder /tmp/blender-4.4.1-linux-x64 /opt/blender
 
-# Copy Bonsai addon into Blender addons directory
+# Copy Bonsai addon from builder and install to Blender addons directory
 RUN mkdir -p /root/.config/blender/4.4/scripts/addons
 COPY --from=blender-builder /tmp/bonsai-addon /root/.config/blender/4.4/scripts/addons/bonsai
 
-# Optional: BlenderBIM addon attempt (skipped if not found)
+# Download and install BlenderBIM addon
 RUN echo "Downloading BlenderBIM addon..." && \
     cd /root/.config/blender/4.4/scripts/addons && \
     wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/blenderbim-221220/blenderbim-221220-a365def-py310-none-any.whl -O blenderbim.whl 2>/dev/null || \
@@ -111,31 +112,31 @@ RUN ln -s /opt/blender/blender /usr/local/bin/blender
 # Copy project files
 COPY . /app
 
-# Install Python dependencies into python3.11
-RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    python3.11 -m pip install --no-cache-dir \
-      mcp \
-      mcp-server \
-      fastapi \
-      uvicorn \
-      python-dotenv \
-      rich \
-      requests \
-      beautifulsoup4 \
-      tqdm \
-      numpy \
-      scipy \
-      ifcopenshell \
-      lark \
-      networkx
+# Install Python dependencies to system Python
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir \
+    mcp \
+    mcp-server \
+    fastapi \
+    uvicorn \
+    python-dotenv \
+    rich \
+    requests \
+    beautifulsoup4 \
+    tqdm \
+    numpy \
+    scipy \
+    ifcopenshell \
+    lark \
+    networkx
 
-# Also install packages into Blender’s embedded Python (so Bonsai can import if needed)
+# Also install to Blender's embedded Python (for Bonsai addon)
 RUN /opt/blender/4.4/python/bin/python3.11 -m pip install --no-cache-dir \
     ifcopenshell \
     numpy \
     scipy 2>&1 || echo "⚠ Some packages may not be available for Blender Python"
 
-# Set Python path to include your src
+# Set Python path to your source
 ENV PYTHONPATH=/app/src:$PYTHONPATH
 ENV PYTHONPATH=/opt/blender/4.4/python/lib/python3.11/site-packages:$PYTHONPATH
 
@@ -152,36 +153,63 @@ echo "============================================"
 echo "IFC Bonsai MCP Server Starting..."
 echo "============================================"
 
-# 1) Start virtual display
+# Start virtual display
 echo "[1/4] Starting X virtual display..."
 export DISPLAY=:99
 Xvfb :99 -screen 0 1024x768x24 &
+XVFB_PID=$!
 sleep 2
 echo "✓ X display ready"
 
-# 2) Start Blender MCP socket server
-echo "[2/4] Starting Blender MCP socket server..."
-/opt/blender/blender --background --python /app/src/blender_mcp/blender_startup.py &
+# Enable addons and check dependencies
+echo "[2/4] Checking addons and dependencies..."
+/opt/blender/blender --background --python-expr "
+import sys
+sys.path.insert(0, '/root/.config/blender/4.4/scripts/addons')
+try:
+    import ifcopenshell.api
+    print('✓ ifcopenshell available')
+except ImportError as e:
+    print(f'⚠ ifcopenshell not available: {e}')
+
+try:
+    import bonsai
+    print('✓ Bonsai addon available')
+except ImportError as e:
+    print(f'⚠ Bonsai addon not available: {e}')
+" 2>&1 || true
+
+# Start Blender with MCP socket server
+echo "[3/4] Starting Blender MCP socket server..."
+/opt/blender/blender --background --python /app/src/blender_mcp/blender_startup.py 2>&1 &
 BLENDER_PID=$!
 
-# 3) Wait for Blender socket to be ready
-echo "[3/4] Waiting for Blender MCP socket on port 9876..."
+# Wait for Blender socket
+echo "[4/4] Waiting for Blender socket server (port 9876)..."
 for i in {1..60}; do
     if nc -z localhost 9876 2>/dev/null; then
         echo "✓ Blender socket ready on port 9876"
         break
     fi
+    if [ $i -eq 60 ]; then
+        echo "✗ Timeout waiting for Blender socket"
+        exit 1
+    fi
     echo "  Attempt $i/60..."
     sleep 1
 done
 
-# 4) Start HTTP server via uvicorn
-echo "[4/4] Starting MCP HTTP Server..."
+# Start HTTP server
+echo ""
+echo "============================================"
+echo "Starting MCP HTTP Server on port 8080"
+echo "============================================"
 echo "Endpoints:"
 echo "  GET  /tools/list"
 echo "  POST /tools/call"
 echo "  GET  /health"
-exec python3.11 -m uvicorn hybrid_server:app --host 0.0.0.0 --port 8080
+echo ""
+cd /app && exec /usr/bin/python3.11 /app/hybrid_server.py
 EOF
 
 RUN chmod +x /app/start.sh
@@ -192,6 +220,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Launch
 CMD ["/app/start.sh"]
+
+
+
 
 
 
