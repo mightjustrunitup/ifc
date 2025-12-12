@@ -45,13 +45,16 @@ RUN echo "Downloading Bonsai addon..." && \
     echo "✓ Bonsai addon ready"
 
 # Stage 2: Runtime with Python + MCP + Blender + Bonsai
-FROM python:3.11-slim
+FROM ubuntu:22.04
 
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-# Install system dependencies for Blender and X11
+# Install system dependencies for Blender and X11 + Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3-pip \
+    python3.11-venv \
     curl \
     wget \
     xvfb \
@@ -60,18 +63,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfreetype6 \
     libfontconfig1 \
     libxfixes3 \
-    libx11-6 \
-    libsm6 \
-    libice6 \
-    libgl1 \
+    libxext6 \
     libxi6 \
     libxinerama1 \
     libxcursor1 \
     libxrandr2 \
     libxdamage1 \
     libxcomposite1 \
+    libx11-6 \
+    libsm6 \
+    libice6 \
+    libgl1 \
+    libbz2-1.0 \
+    libssl3 \
     netcat-openbsd \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/bin/python3.11 /usr/bin/python
 
 # Copy Blender from builder stage
 COPY --from=blender-builder /tmp/blender-4.4.1-linux-x64 /opt/blender
@@ -179,6 +186,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Run startup script
 CMD ["/app/start.sh"]
+
+
 
 
 
