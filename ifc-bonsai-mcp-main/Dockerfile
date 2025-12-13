@@ -40,10 +40,10 @@ RUN echo "Downloading Blender 4.4..." && \
     rm blender.tar.xz && \
     echo "✓ Blender 4.4 ready"
 
-# Download Bonsai addon from GitHub
+# Download Bonsai addon from GitHub (updated to latest alpha as of Dec 13, 2025)
 RUN echo "Downloading Bonsai addon build..." && \
     cd /tmp && \
-    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha2512111303/bonsai_py311-0.8.5-alpha251211-linux-x64.zip -O bonsai.zip && \
+    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha2512130000/bonsai_py311-0.8.5-alpha251213-linux-x64.zip -O bonsai.zip && \
     echo "Extracting Bonsai..." && \
     unzip -q bonsai.zip && \
     ls -la /tmp/ | grep bonsai && \
@@ -60,13 +60,14 @@ FROM ubuntu:22.04
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-# Install prerequisites, add Deadsnakes PPA manually, and install Python 3.11 + dependencies
+# Install prerequisites, add Deadsnakes PPA manually with correct key fetch, and install Python 3.11 + dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     curl \
     gnupg && \
-    curl -fsSL https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/deadsnakes-ppa.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/deadsnakes-ppa.gpg] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu jammy main" > /etc/apt/sources.list.d/deadsnakes-ppa.list && \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xf23c5a6cf475977595c89f51ba6932366a755776" | gpg --dearmor -o /etc/apt/keyrings/deadsnakes-ppa.gpg && \
+    echo "deb [signed-by=/etc/apt/keyrings/deadsnakes-ppa.gpg] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu jammy main" > /etc/apt/sources.list.d/deadsnakes-ppa.list && \
     apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
     python3.11-dev \
