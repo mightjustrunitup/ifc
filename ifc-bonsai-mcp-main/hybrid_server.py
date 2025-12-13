@@ -20,9 +20,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("HybridServer")
 
-# Initialize app at module level (required by Uvicorn)
-app = FastAPI(title="IFC Bonsai MCP Server")
-
 def create_app():
     """Create and configure the FastAPI application"""
     
@@ -85,30 +82,25 @@ def create_app():
         http_app = create_http_app()
         logger.info("  ✓ HTTP app created successfully")
         
-        # Copy routes from http_app to module-level app
+        # Log routes from http_app
+        logger.info("\nAvailable routes:")
         for route in http_app.routes:
             if hasattr(route, 'path'):
                 methods = getattr(route, 'methods', set())
                 logger.info(f"  - {route.path} {methods}")
         
-        # Return the properly configured app
+        # Return the properly configured app directly
         return http_app
     except Exception as e:
         logger.error(f"  ✗ Failed to create HTTP app: {e}", exc_info=True)
         sys.exit(1)
 
-# Initialize app with routes when module is imported
-try:
-    configured_app = create_app()
-    # Replace the module-level app with the fully configured one
-    app.routes = configured_app.routes
-    app.openapi_schema = configured_app.openapi_schema
-except Exception as e:
-    logger.error(f"Failed to initialize app: {e}", exc_info=True)
-
 def main():
     """Main entry point - called when run as script"""
-    http_port = int(os.environ.get("HTTP_PORT", "8000"))
+    http_port = int(os.environ.get("HTTP_PORT", os.environ.get("PORT", "8000")))
+    
+    # Create the app
+    app = create_app()
     
     logger.info(f"\nStep 3: Starting server on port {http_port}")
     logger.info("Endpoints:")
@@ -128,5 +120,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
