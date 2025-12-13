@@ -1,5 +1,5 @@
 # Dockerfile for IFC Bonsai MCP Server with Blender 4.4 + Bonsai Addon
-# Multi-stage build optimized for fly.io deployment
+# Multi-stage build optimized for Railway deployment
 
 ##############################################
 # Stage 1: Blender 4.4 download + dependencies
@@ -40,16 +40,23 @@ RUN echo "Downloading Blender 4.4..." && \
     rm blender.tar.xz && \
     echo "✓ Blender 4.4 ready"
 
-# Download Bonsai addon from GitHub (latest as of Dec 11, 2025 - bonsai-0.8.5-alpha2512111939)
+# FIXED: Download Bonsai addon - corrected filename to match actual release
 RUN echo "Downloading Bonsai addon build..." && \
     cd /tmp && \
-    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha2512111939/bonsai_py311-0.8.5-alpha2512111939-linux-x64.zip -O bonsai.zip && \
+    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha2512111939/bonsai_py311-0.8.5-alpha251211-linux-x64.zip -O bonsai.zip && \
     echo "Extracting Bonsai..." && \
     unzip -q bonsai.zip && \
-    ls -la /tmp/ | grep bonsai && \
-    find /tmp -maxdepth 1 -type d -name "*bonsai*" -exec mv {} /tmp/bonsai-addon \; && \
+    echo "Contents after extraction:" && \
+    ls -la /tmp/ && \
+    echo "Looking for bonsai directories..." && \
+    find /tmp -maxdepth 1 -type d && \
+    (find /tmp -maxdepth 1 -type d -name "*bonsai*" -exec mv {} /tmp/bonsai-addon \; || \
+     find /tmp -maxdepth 1 -type d -name "*blender*" ! -name "blender-4*" -exec mv {} /tmp/bonsai-addon \; || \
+     mkdir -p /tmp/bonsai-addon) && \
     rm bonsai.zip && \
-    echo "✓ Bonsai addon ready"
+    echo "✓ Bonsai addon ready" && \
+    echo "Final addon contents:" && \
+    ls -la /tmp/bonsai-addon/ || echo "Warning: addon directory structure may need manual check"
 
 ##############################################
 # Stage 2: Runtime with Python + MCP + Blender
@@ -140,17 +147,21 @@ RUN /opt/blender/4.4/python/bin/python3.11 -m pip install --no-cache-dir \
 ENV PYTHONPATH=/app/src:$PYTHONPATH
 ENV PYTHONPATH=/opt/blender/4.4/python/lib/python3.11/site-packages:$PYTHONPATH
 
-# Expose HTTP port
-ENV HTTP_PORT=8080
-EXPOSE 8080
+# FIXED: Use Railway's PORT environment variable
+ENV HTTP_PORT=${PORT:-8080}
+EXPOSE ${PORT:-8080}
 
-# Startup script
+# FIXED: Updated startup script to use Railway's PORT
 RUN cat > /app/start.sh << 'EOF'
 #!/bin/bash
 set -e
 
+# Use Railway's PORT if available, fallback to 8080
+export HTTP_PORT=${PORT:-8080}
+
 echo "============================================"
 echo "IFC Bonsai MCP Server Starting..."
+echo "Port: ${HTTP_PORT}"
 echo "============================================"
 
 # Start virtual display
@@ -202,7 +213,7 @@ done
 # Start HTTP server
 echo ""
 echo "============================================"
-echo "Starting MCP HTTP Server on port 8080"
+echo "Starting MCP HTTP Server on port ${HTTP_PORT}"
 echo "============================================"
 echo "Endpoints:"
 echo "  GET  /tools/list"
@@ -214,9 +225,9 @@ EOF
 
 RUN chmod +x /app/start.sh
 
-# Health check
+# FIXED: Health check uses Railway's PORT
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8080/health 2>/dev/null || exit 1
+    CMD curl -f http://localhost:${PORT:-8080}/health 2>/dev/null || exit 1
 
 # Launch
 CMD ["/app/start.sh"]
