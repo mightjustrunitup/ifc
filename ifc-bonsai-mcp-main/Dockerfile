@@ -40,10 +40,10 @@ RUN echo "Downloading Blender 4.4..." && \
     rm blender.tar.xz && \
     echo "✓ Blender 4.4 ready"
 
-# Download Bonsai addon from GitHub (updated to latest alpha as of Dec 13, 2025)
+# Download Bonsai addon from GitHub (latest as of Dec 11, 2025 - bonsai-0.8.5-alpha2512111939)
 RUN echo "Downloading Bonsai addon build..." && \
     cd /tmp && \
-    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha2512130000/bonsai_py311-0.8.5-alpha251213-linux-x64.zip -O bonsai.zip && \
+    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha2512111939/bonsai_py311-0.8.5-alpha2512111939-linux-x64.zip -O bonsai.zip && \
     echo "Extracting Bonsai..." && \
     unzip -q bonsai.zip && \
     ls -la /tmp/ | grep bonsai && \
