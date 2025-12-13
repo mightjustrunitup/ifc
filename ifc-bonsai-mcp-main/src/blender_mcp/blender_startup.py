@@ -19,35 +19,34 @@ logging.basicConfig(
 logger = logging.getLogger("BlenderStartup")
 
 def initialize_blender():
-    """Initialize Blender with BlenderBIM addon"""
+    """Initialize Blender with Bonsai addon"""
     try:
         import bpy
-        logger.info("✓ Blender Python API loaded")
+        logger.info("Blender Python API loaded")
         
-        # Enable BlenderBIM addon
+        # Enable Bonsai addon
         try:
-            bpy.ops.preferences.addon_enable(module="blenderbim")
-            logger.info("✓ BlenderBIM addon enabled")
+            bpy.ops.preferences.addon_enable(module="bonsai")
+            logger.info("Bonsai addon enabled")
         except Exception as e:
-            logger.warning(f"Could not auto-enable BlenderBIM: {e}")
-            logger.info("  BlenderBIM may need to be installed separately")
+            logger.warning(f"Could not auto-enable Bonsai: {e}")
+            logger.info("  Bonsai may need to be installed separately")
         
         # Create a default project
         try:
-            from blenderbim.bim.ifc import IfcStore
+            from bonsai.bim.ifc import IfcStore
             if not IfcStore.file:
                 import ifcopenshell
                 ifc = ifcopenshell.file(schema="IFC4")
                 IfcStore.file = ifc
-                logger.info("✓ Default IFC project created")
+                logger.info("Default IFC project created")
         except Exception as e:
             logger.warning(f"Could not create default project: {e}")
         
         return True
     except Exception as e:
-        logger.error(f"✗ Failed to initialize Blender: {e}")
+        logger.error(f"Failed to initialize Blender: {e}")
         return False
-
 
 class BlenderAddonSocket:
     """Socket server for Blender addon communication"""
@@ -66,14 +65,14 @@ class BlenderAddonSocket:
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(5)
             self.running = True
-            logger.info(f"✓ Addon socket server listening on {self.host}:{self.port}")
+            logger.info(f"Addon socket server listening on {self.host}:{self.port}")
             
             # Start accepting connections in background
             thread = threading.Thread(target=self._accept_connections, daemon=True)
             thread.start()
             
         except Exception as e:
-            logger.error(f"✗ Failed to start socket server: {e}")
+            logger.error(f"Failed to start socket server: {e}")
             self.running = False
     
     def _accept_connections(self):
@@ -124,7 +123,7 @@ class BlenderAddonSocket:
             
             # Import here to ensure Blender context is available
             import bpy
-            from blenderbim.bim.ifc import IfcStore
+            from bonsai.bim.ifc import IfcStore
             
             # Route to appropriate handler
             if cmd_type == 'create_wall':
@@ -149,7 +148,7 @@ class BlenderAddonSocket:
         try:
             import bpy
             import ifcopenshell
-            from blenderbim.bim.ifc import IfcStore
+            from bonsai.bim.ifc import IfcStore
             
             # Get or create IFC file
             ifc = IfcStore.file
@@ -189,7 +188,7 @@ class BlenderAddonSocket:
     def _export_ifc(self, params: dict) -> dict:
         """Export IFC to file"""
         try:
-            from blenderbim.bim.ifc import IfcStore
+            from bonsai.bim.ifc import IfcStore
             
             output_path = params.get('path')
             if not output_path:
@@ -205,7 +204,7 @@ class BlenderAddonSocket:
             # Verify file was created
             if Path(output_path).exists():
                 file_size = Path(output_path).stat().st_size
-                logger.info(f"✓ IFC exported: {output_path} ({file_size} bytes)")
+                logger.info(f"IFC exported: {output_path} ({file_size} bytes)")
                 return {
                     "status": "ok",
                     "result": {
@@ -243,7 +242,6 @@ class BlenderAddonSocket:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-
 def main():
     """Main entry point"""
     logger.info("=" * 60)
@@ -267,7 +265,6 @@ def main():
     except KeyboardInterrupt:
         logger.info("Shutting down...")
         socket_server.running = False
-
 
 if __name__ == "__main__":
     main()
