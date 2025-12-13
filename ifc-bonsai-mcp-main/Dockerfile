@@ -1,62 +1,110 @@
-# Ultra-optimized Dockerfile for Railway
-# Focuses on SPEED and minimal layers
+# Dockerfile for IFC Bonsai MCP Server with Blender 4.4 + Bonsai Addon
+# Optimized for Railway deployment - FASTER BUILD
+
+##############################################
+# Stage 1: Blender 4.4 download + dependencies
+##############################################
+
+FROM ubuntu:22.04 AS blender-builder
+
+WORKDIR /tmp
+
+# Install minimal packages needed for download/extraction
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget ca-certificates xz-utils unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download Blender 4.4 LTS (parallel with Bonsai for speed)
+RUN wget -q https://download.blender.org/release/Blender4.4/blender-4.4.1-linux-x64.tar.xz -O blender.tar.xz && \
+    tar -xf blender.tar.xz && \
+    rm blender.tar.xz
+
+# Download and extract Bonsai addon
+RUN wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha2512111939/bonsai_py311-0.8.5-alpha251211-linux-x64.zip -O bonsai.zip && \
+    unzip -q bonsai.zip && \
+    mv bonsai bonsai-addon && \
+    rm bonsai.zip
+
+##############################################
+# Stage 2: Runtime with Python + MCP + Blender
+##############################################
 
 FROM ubuntu:22.04
 
 ENV PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=noninteractive \
-    HTTP_PORT=${PORT:-8080}
+    PYTHONPATH=/app/src:/opt/blender/4.4/python/lib/python3.11/site-packages
 
-WORKDIR /tmp
+WORKDIR /app
 
-# STAGE 1: Install everything in parallel and minimal layers
+# Install ALL dependencies in ONE layer for Docker caching
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget curl ca-certificates xz-utils unzip \
-    python3.11 python3.11-dev xvfb netcat-openbsd \
+    software-properties-common curl gnupg \
+    python3.11 python3.11-dev python3.11-venv \
+    wget xvfb netcat-openbsd \
     libxrender1 libxkbcommon0 libfreetype6 libfontconfig1 \
     libxfixes3 libxext6 libxi6 libxinerama1 libxcursor1 \
     libxrandr2 libxdamage1 libxcomposite1 libx11-6 \
     libsm6 libice6 libgl1 libbz2-1.0 libssl3 \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -s /usr/bin/python3.11 /usr/bin/python
+    && ln -s /usr/bin/python3.11 /usr/bin/python \
+    && python3.11 -m ensurepip --upgrade \
+    && python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Download Blender and Bonsai in parallel (using background processes)
-RUN (wget -q https://download.blender.org/release/Blender4.4/blender-4.4.1-linux-x64.tar.xz -O blender.tar.xz &) && \
-    (wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/bonsai-0.8.5-alpha2512111939/bonsai_py311-0.8.5-alpha251211-linux-x64.zip -O bonsai.zip &) && \
-    wait
+# Copy Blender and Bonsai from builder
+COPY --from=blender-builder /tmp/blender-4.4.1-linux-x64 /opt/blender
+COPY --from=blender-builder /tmp/bonsai-addon /root/.config/blender/4.4/scripts/addons/bonsai
 
-# Extract both in parallel
-RUN (tar -xf blender.tar.xz &) && \
-    (unzip -q bonsai.zip &) && \
-    wait && \
-    mv blender-4.4.1-linux-x64 /opt/blender && \
-    mkdir -p /root/.config/blender/4.4/scripts/addons && \
-    mv bonsai /root/.config/blender/4.4/scripts/addons/ && \
-    rm blender.tar.xz bonsai.zip && \
-    ln -s /opt/blender/blender /usr/local/bin/blender
+# Symlink blender
+RUN ln -s /opt/blender/blender /usr/local/bin/blender
 
-# Setup pip quickly
-RUN python3.11 -m ensurepip && \
-    python3.11 -m pip install --no-cache-dir -U pip
+# Copy project files BEFORE pip install (for better caching)
+COPY . /app
 
-WORKDIR /app
-COPY . .
-
-# Install Python deps - only essentials for faster build
+# Install Python dependencies - COMBINED for speed
 RUN python3.11 -m pip install --no-cache-dir \
-    fastapi uvicorn[standard] python-dotenv
+    mcp mcp-server fastapi uvicorn python-dotenv rich \
+    requests beautifulsoup4 tqdm numpy scipy ifcopenshell lark networkx
 
-# Minimal startup script
-RUN echo '#!/bin/bash\n\
-set -e\n\
-export DISPLAY=:99\n\
-Xvfb :99 -screen 0 1024x768x24 &\n\
-sleep 2\n\
-blender --background --python /app/src/blender_mcp/blender_startup.py &\n\
-sleep 10\n\
-exec python3.11 /app/hybrid_server.py' > /app/start.sh && \
-    chmod +x /app/start.sh
+# Install to Blender's Python (continue on error)
+RUN /opt/blender/4.4/python/bin/python3.11 -m pip install --no-cache-dir \
+    ifcopenshell numpy scipy || true
 
+# Use Railway's PORT
+ENV HTTP_PORT=${PORT:-8080}
 EXPOSE ${PORT:-8080}
+
+# Startup script - SIMPLIFIED
+RUN cat > /app/start.sh << 'EOF'
+#!/bin/bash
+set -e
+export HTTP_PORT=${PORT:-8080}
+export DISPLAY=:99
+
+echo "Starting Bonsai MCP Server on port ${HTTP_PORT}..."
+
+# Start Xvfb
+Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+sleep 2
+
+# Start Blender MCP socket
+/opt/blender/blender --background --python /app/src/blender_mcp/blender_startup.py > /tmp/blender.log 2>&1 &
+
+# Wait for socket
+for i in {1..30}; do
+    nc -z localhost 9876 2>/dev/null && break
+    [ $i -eq 30 ] && echo "Blender timeout" && exit 1
+    sleep 1
+done
+
+echo "Starting HTTP server..."
+exec python3.11 /app/hybrid_server.py
+EOF
+
+RUN chmod +x /app/start.sh
+
+# Simplified health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
 
 CMD ["/app/start.sh"]
