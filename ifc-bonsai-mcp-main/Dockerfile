@@ -60,10 +60,13 @@ FROM ubuntu:22.04
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-# System dependencies for Blender + Python
+# Add Deadsnakes PPA for Python 3.11 and install it
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
-    python3-pip \
+    python3.11-dev \
     python3.11-venv \
     curl \
     wget \
@@ -90,6 +93,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/bin/python3.11 /usr/bin/python
 
+# Set up pip for Python 3.11
+RUN python3.11 -m ensurepip --upgrade && \
+    python3.11 -m pip install --upgrade pip setuptools wheel
+
 # Copy Blender from builder
 COPY --from=blender-builder /tmp/blender-4.4.1-linux-x64 /opt/blender
 
@@ -97,24 +104,14 @@ COPY --from=blender-builder /tmp/blender-4.4.1-linux-x64 /opt/blender
 RUN mkdir -p /root/.config/blender/4.4/scripts/addons
 COPY --from=blender-builder /tmp/bonsai-addon /root/.config/blender/4.4/scripts/addons/bonsai
 
-# Download and install BlenderBIM addon
-RUN echo "Downloading BlenderBIM addon..." && \
-    cd /root/.config/blender/4.4/scripts/addons && \
-    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/blenderbim-221220/blenderbim-221220-a365def-py310-none-any.whl -O blenderbim.whl 2>/dev/null || \
-    wget -q https://github.com/IfcOpenShell/IfcOpenShell/releases/download/blenderbim-dev/blenderbim-dev.zip -O blenderbim.zip && \
-    if [ -f blenderbim.zip ]; then unzip -q blenderbim.zip && rm blenderbim.zip; fi && \
-    if [ -f blenderbim.whl ]; then unzip -q blenderbim.whl && rm blenderbim.whl; fi && \
-    echo "✓ BlenderBIM addon installed" 2>&1 || echo "⚠ BlenderBIM addon installation skipped"
-
 # Symlink blender for easy access
 RUN ln -s /opt/blender/blender /usr/local/bin/blender
 
 # Copy project files
 COPY . /app
 
-# Install Python dependencies to system Python
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
-RUN pip install --no-cache-dir \
+# Install Python dependencies using Python 3.11's pip
+RUN python3.11 -m pip install --no-cache-dir \
     mcp \
     mcp-server \
     fastapi \
@@ -144,7 +141,7 @@ ENV PYTHONPATH=/opt/blender/4.4/python/lib/python3.11/site-packages:$PYTHONPATH
 ENV HTTP_PORT=8080
 EXPOSE 8080
 
-# Startup script
+# Startup script (unchanged)
 RUN cat > /app/start.sh << 'EOF'
 #!/bin/bash
 set -e
@@ -220,38 +217,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Launch
 CMD ["/app/start.sh"]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
