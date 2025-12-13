@@ -60,15 +60,17 @@ FROM ubuntu:22.04
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-# Add Deadsnakes PPA for Python 3.11 and install it
+# Install prerequisites, add Deadsnakes PPA manually, and install Python 3.11 + dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common && \
-    add-apt-repository ppa:deadsnakes/ppa -y && \
+    software-properties-common \
+    curl \
+    gnupg && \
+    curl -fsSL https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/deadsnakes-ppa.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/deadsnakes-ppa.gpg] https://ppa.launchpadcontent.net/deadsnakes/ppa/ubuntu jammy main" > /etc/apt/sources.list.d/deadsnakes-ppa.list && \
     apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
     python3.11-dev \
     python3.11-venv \
-    curl \
     wget \
     xvfb \
     libxrender1 \
@@ -141,7 +143,7 @@ ENV PYTHONPATH=/opt/blender/4.4/python/lib/python3.11/site-packages:$PYTHONPATH
 ENV HTTP_PORT=8080
 EXPOSE 8080
 
-# Startup script (unchanged)
+# Startup script
 RUN cat > /app/start.sh << 'EOF'
 #!/bin/bash
 set -e
