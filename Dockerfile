@@ -10,12 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project files
-COPY pyproject.toml uv.lock* ./
+# Copy essential project files
+COPY pyproject.toml ./
+COPY uv.lock ./
 COPY src/ ./src/
 COPY blender_addon/ ./blender_addon/
-COPY scripts/ ./scripts/
-COPY docs/ ./docs/
 
 # Install uv package manager
 RUN pip install --no-cache-dir uv
